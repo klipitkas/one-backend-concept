@@ -1,0 +1,264 @@
+---
+title: "Database Indexing"
+slug: "database-indexing"
+date: "2026-01-22"
+category: "Databases"
+difficulty: "Intermediate"
+tags: ["databases", "performance", "sql", "optimization"]
+description: "Master database indexing to dramatically improve query performance and understand the trade-offs involved"
+---
+
+## Overview
+
+A database index is a data structure that improves the speed of data retrieval operations on a database table. Without an index, the database must scan every row in a table to find matching records—a process called a full table scan. With proper indexing, the database can locate data without scanning every row.
+
+Think of an index like the index at the back of a book. Instead of reading every page to find a topic, you look it up in the index and go directly to the relevant pages.
+
+## How Indexes Work
+
+Most database indexes use a B-tree (balanced tree) structure. This allows the database to find any value in O(log n) time complexity instead of O(n) for a full scan.
+
+```
+                    [50]
+                   /    \
+              [25]        [75]
+             /    \      /    \
+          [10]  [30]  [60]   [90]
+```
+
+When searching for a value, the database traverses the tree from root to leaf, making comparisons at each level until it finds the target value (or determines it doesn't exist).
+
+## Types of Indexes
+
+### B-Tree Index (Default)
+
+The most common index type. Excellent for equality and range queries.
+
+```sql
+-- Create a B-tree index
+CREATE INDEX idx_users_email ON users(email);
+
+-- Queries that benefit from this index
+SELECT * FROM users WHERE email = 'user@example.com';
+SELECT * FROM users WHERE email LIKE 'user%';
+SELECT * FROM users WHERE email > 'a' AND email < 'm';
+```
+
+### Hash Index
+
+Uses a hash function to map values to buckets. Extremely fast for equality lookups but cannot support range queries.
+
+```sql
+-- PostgreSQL hash index
+CREATE INDEX idx_users_id_hash ON users USING HASH (id);
+
+-- Only benefits equality queries
+SELECT * FROM users WHERE id = 12345;
+```
+
+### Composite Index (Multi-Column)
+
+An index on multiple columns. The order of columns matters significantly.
+
+```sql
+-- Create composite index
+CREATE INDEX idx_orders_user_date ON orders(user_id, created_at);
+
+-- Queries that benefit (leftmost prefix rule)
+SELECT * FROM orders WHERE user_id = 1;
+SELECT * FROM orders WHERE user_id = 1 AND created_at > '2024-01-01';
+
+-- Does NOT efficiently use the index
+SELECT * FROM orders WHERE created_at > '2024-01-01';
+```
+
+### Covering Index
+
+An index that contains all columns needed by a query, allowing the database to return results without accessing the table.
+
+```sql
+-- Covering index for a specific query
+CREATE INDEX idx_users_email_name ON users(email, first_name, last_name);
+
+-- This query is "covered" - no table access needed
+SELECT first_name, last_name FROM users WHERE email = 'user@example.com';
+```
+
+### Partial Index
+
+An index on a subset of rows, useful for frequently queried conditions.
+
+```sql
+-- Only index active users
+CREATE INDEX idx_active_users ON users(email) WHERE status = 'active';
+
+-- Efficiently uses the partial index
+SELECT * FROM users WHERE email = 'user@example.com' AND status = 'active';
+```
+
+## When to Create Indexes
+
+### Good Candidates for Indexing
+
+1. **Primary keys** — Automatically indexed by most databases
+2. **Foreign keys** — Speeds up JOIN operations
+3. **Columns in WHERE clauses** — Frequently filtered columns
+4. **Columns in ORDER BY** — Avoids sorting operations
+5. **Columns in JOIN conditions** — Critical for query performance
+
+### When NOT to Index
+
+1. **Small tables** — Full scan may be faster than index lookup
+2. **Columns with low cardinality** — Boolean flags, status fields with few values
+3. **Frequently updated columns** — Index maintenance overhead
+4. **Columns rarely used in queries** — Wasted storage and maintenance cost
+
+## Index Performance Analysis
+
+### EXPLAIN Command
+
+Use EXPLAIN to understand how the database executes queries and whether indexes are being used.
+
+```sql
+-- PostgreSQL
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'user@example.com';
+
+-- Output shows index usage
+Index Scan using idx_users_email on users  (cost=0.42..8.44 rows=1 width=100)
+  Index Cond: (email = 'user@example.com'::text)
+  Planning Time: 0.152 ms
+  Execution Time: 0.089 ms
+```
+
+### MySQL EXPLAIN
+
+```sql
+EXPLAIN SELECT * FROM users WHERE email = 'user@example.com';
+
+-- Look for these key indicators:
+-- type: ref, range, index (good) vs ALL (bad - full scan)
+-- key: which index is being used
+-- rows: estimated rows to examine
+```
+
+## Common Pitfalls
+
+### 1. Over-Indexing
+
+**Problem:** Creating too many indexes slows down INSERT, UPDATE, and DELETE operations because each index must be maintained.
+
+```sql
+-- Don't do this - every write updates all indexes
+CREATE INDEX idx_1 ON users(email);
+CREATE INDEX idx_2 ON users(email, name);
+CREATE INDEX idx_3 ON users(email, created_at);
+CREATE INDEX idx_4 ON users(name);
+CREATE INDEX idx_5 ON users(name, email);
+```
+
+**Solution:** Only create indexes for actual query patterns. Monitor and remove unused indexes.
+
+### 2. Wrong Column Order in Composite Indexes
+
+**Problem:** The leftmost prefix rule means column order matters.
+
+```sql
+-- Index: (user_id, created_at)
+
+-- Uses index efficiently
+WHERE user_id = 1
+WHERE user_id = 1 AND created_at > '2024-01-01'
+
+-- Cannot use index efficiently
+WHERE created_at > '2024-01-01'  -- user_id is not specified
+```
+
+**Solution:** Order columns from most selective (most filtering) to least selective.
+
+### 3. Functions Prevent Index Usage
+
+**Problem:** Applying functions to indexed columns prevents index usage.
+
+```sql
+-- Index on email column exists, but these queries can't use it:
+SELECT * FROM users WHERE LOWER(email) = 'user@example.com';
+SELECT * FROM users WHERE YEAR(created_at) = 2024;
+```
+
+**Solution:** Use functional indexes or rewrite queries.
+
+```sql
+-- Create functional index
+CREATE INDEX idx_users_email_lower ON users(LOWER(email));
+
+-- Or rewrite the query
+SELECT * FROM users WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01';
+```
+
+### 4. Implicit Type Conversion
+
+**Problem:** Type mismatches cause implicit conversion, preventing index usage.
+
+```sql
+-- If user_id is INTEGER but you query with string:
+SELECT * FROM users WHERE user_id = '123';  -- May not use index
+```
+
+**Solution:** Always use matching types in queries.
+
+## Best Practices
+
+1. **Analyze your queries first** — Create indexes based on actual query patterns, not assumptions
+
+2. **Monitor index usage** — Regularly check for unused indexes and remove them
+
+```sql
+-- PostgreSQL: Find unused indexes
+SELECT schemaname, tablename, indexname, idx_scan
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0;
+```
+
+3. **Consider covering indexes** — For frequently-run queries, include all needed columns
+
+4. **Use partial indexes for filtered queries** — Save space and improve performance
+
+5. **Rebuild indexes periodically** — Fragmentation can degrade performance over time
+
+```sql
+-- PostgreSQL
+REINDEX INDEX idx_users_email;
+
+-- MySQL
+ALTER TABLE users DROP INDEX idx_email, ADD INDEX idx_email(email);
+```
+
+## Index Storage and Memory
+
+Indexes consume disk space and memory. Consider the trade-offs:
+
+```sql
+-- Check index size in PostgreSQL
+SELECT
+    indexname,
+    pg_size_pretty(pg_relation_size(indexrelid)) AS size
+FROM pg_stat_user_indexes
+WHERE schemaname = 'public'
+ORDER BY pg_relation_size(indexrelid) DESC;
+```
+
+A general rule: index size is roughly 10-30% of table size per index, depending on the indexed columns.
+
+## Related Concepts
+
+- **Query Optimization** — Using indexes effectively in query planning
+- **Database Partitioning** — Splitting large tables for better performance
+- **Full-Text Search** — Specialized indexes for text searching
+- **Database Statistics** — How the query planner makes decisions
+
+## Further Reading
+
+- Use The Index, Luke! (use-the-index-luke.com)
+- PostgreSQL Index Types Documentation
+- MySQL Index Optimization
+- Database Internals by Alex Petrov

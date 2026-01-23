@@ -1,0 +1,382 @@
+---
+title: "Caching Strategies"
+slug: "caching-strategies"
+date: "2026-01-21"
+category: "Caching"
+difficulty: "Intermediate"
+tags: ["caching", "performance", "redis", "scalability"]
+description: "Learn different caching strategies and when to use each one to optimize your application's performance"
+---
+
+## Overview
+
+Caching is a technique that stores copies of data in a temporary storage location (cache) so that future requests for that data can be served faster. Instead of fetching data from the original source (database, API, disk) every time, the application first checks the cache.
+
+A well-implemented caching strategy can reduce database load by 90%+, decrease response latency from seconds to milliseconds, and significantly lower infrastructure costs.
+
+## Cache Placement
+
+### Client-Side Cache
+
+Data stored in the user's browser or mobile app.
+
+```javascript
+// Browser localStorage caching
+const getUser = async (userId) => {
+  const cacheKey = `user_${userId}`;
+  const cached = localStorage.getItem(cacheKey);
+
+  if (cached) {
+    const { data, expiry } = JSON.parse(cached);
+    if (Date.now() < expiry) {
+      return data;
+    }
+  }
+
+  const response = await fetch(`/api/users/${userId}`);
+  const user = await response.json();
+
+  localStorage.setItem(cacheKey, JSON.stringify({
+    data: user,
+    expiry: Date.now() + 3600000 // 1 hour
+  }));
+
+  return user;
+};
+```
+
+### CDN Cache
+
+Caching at edge locations geographically close to users.
+
+```nginx
+# NGINX caching configuration
+location /static/ {
+    expires 30d;
+    add_header Cache-Control "public, immutable";
+}
+
+location /api/ {
+    add_header Cache-Control "private, max-age=0, no-cache";
+}
+```
+
+### Application Cache
+
+In-memory cache within your application process.
+
+```python
+from functools import lru_cache
+from datetime import datetime, timedelta
+
+# Simple in-memory cache with LRU eviction
+@lru_cache(maxsize=1000)
+def get_user_cached(user_id: int):
+    return database.query(f"SELECT * FROM users WHERE id = {user_id}")
+```
+
+### Distributed Cache
+
+Shared cache accessible by multiple application instances (Redis, Memcached).
+
+```python
+import redis
+import json
+
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
+
+def get_user(user_id: int):
+    cache_key = f"user:{user_id}"
+
+    # Try cache first
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
+    # Cache miss - fetch from database
+    user = database.get_user(user_id)
+
+    # Store in cache with TTL
+    redis_client.setex(cache_key, 3600, json.dumps(user))
+
+    return user
+```
+
+## Caching Patterns
+
+### Cache-Aside (Lazy Loading)
+
+The application manages the cache explicitly. On read: check cache first, on miss fetch from database and populate cache.
+
+```python
+def get_product(product_id: str):
+    # 1. Check cache
+    cached = cache.get(f"product:{product_id}")
+    if cached:
+        return cached
+
+    # 2. Cache miss - load from database
+    product = database.find_product(product_id)
+
+    # 3. Populate cache
+    cache.set(f"product:{product_id}", product, ttl=3600)
+
+    return product
+
+def update_product(product_id: str, data: dict):
+    # Update database
+    database.update_product(product_id, data)
+
+    # Invalidate cache
+    cache.delete(f"product:{product_id}")
+```
+
+**Pros:** Only requested data is cached, cache failures don't break the system
+**Cons:** Cache miss penalty, potential for stale data
+
+### Write-Through
+
+Data is written to cache and database simultaneously.
+
+```python
+def save_user(user_id: str, user_data: dict):
+    # Write to database
+    database.save_user(user_id, user_data)
+
+    # Write to cache (synchronously)
+    cache.set(f"user:{user_id}", user_data, ttl=3600)
+```
+
+**Pros:** Cache is always consistent with database
+**Cons:** Write latency increased, unused data may be cached
+
+### Write-Behind (Write-Back)
+
+Data is written to cache immediately, database write happens asynchronously.
+
+```python
+import asyncio
+from collections import deque
+
+write_queue = deque()
+
+def save_user(user_id: str, user_data: dict):
+    # Write to cache immediately
+    cache.set(f"user:{user_id}", user_data)
+
+    # Queue database write
+    write_queue.append(('user', user_id, user_data))
+
+async def process_write_queue():
+    while True:
+        if write_queue:
+            entity, id, data = write_queue.popleft()
+            await database.save(entity, id, data)
+        await asyncio.sleep(0.1)
+```
+
+**Pros:** Very fast writes, reduced database load
+**Cons:** Risk of data loss if cache fails before database write
+
+### Read-Through
+
+Cache sits between application and database; application only talks to cache.
+
+```python
+class ReadThroughCache:
+    def __init__(self, cache, database):
+        self.cache = cache
+        self.database = database
+
+    def get(self, key: str, loader_fn):
+        # Check cache
+        value = self.cache.get(key)
+        if value is not None:
+            return value
+
+        # Load from database (cache handles this transparently)
+        value = loader_fn()
+        self.cache.set(key, value)
+        return value
+```
+
+## Cache Invalidation
+
+Cache invalidation is one of the hardest problems in computer science. Here are common strategies:
+
+### Time-Based Expiration (TTL)
+
+Set a time-to-live for cached data.
+
+```python
+# Redis TTL
+cache.setex("user:123", 3600, user_data)  # Expires in 1 hour
+
+# With sliding expiration
+def get_with_sliding_ttl(key: str, ttl: int = 3600):
+    value = cache.get(key)
+    if value:
+        cache.expire(key, ttl)  # Reset TTL on access
+    return value
+```
+
+### Event-Based Invalidation
+
+Invalidate cache when underlying data changes.
+
+```python
+# Using pub/sub for cache invalidation
+def update_user(user_id: str, data: dict):
+    database.update_user(user_id, data)
+
+    # Publish invalidation event
+    redis_client.publish('cache_invalidation', f"user:{user_id}")
+
+# Subscriber in each app instance
+def invalidation_listener():
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe('cache_invalidation')
+
+    for message in pubsub.listen():
+        if message['type'] == 'message':
+            cache.delete(message['data'])
+```
+
+### Version-Based Invalidation
+
+Include a version number in cache keys.
+
+```python
+def get_config(config_name: str):
+    version = cache.get("config_version") or 1
+    cache_key = f"config:{config_name}:v{version}"
+
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    config = database.get_config(config_name)
+    cache.set(cache_key, config)
+    return config
+
+def invalidate_all_configs():
+    cache.incr("config_version")
+```
+
+## Common Pitfalls
+
+### 1. Cache Stampede (Thundering Herd)
+
+**Problem:** When a popular cache key expires, hundreds of requests simultaneously hit the database.
+
+```python
+# BAD: All requests hit database when cache expires
+def get_popular_item():
+    cached = cache.get("popular_item")
+    if not cached:
+        # 100 concurrent requests all do this
+        item = database.get_expensive_query()
+        cache.set("popular_item", item, ttl=60)
+    return cached or item
+```
+
+**Solution:** Use locking or cache refresh before expiration.
+
+```python
+import threading
+
+lock = threading.Lock()
+
+def get_popular_item():
+    cached = cache.get("popular_item")
+    if cached:
+        return cached
+
+    # Only one request loads data
+    with lock:
+        # Double-check after acquiring lock
+        cached = cache.get("popular_item")
+        if cached:
+            return cached
+
+        item = database.get_expensive_query()
+        cache.set("popular_item", item, ttl=60)
+        return item
+```
+
+### 2. Stale Data
+
+**Problem:** Cache contains outdated data after database updates.
+
+**Solution:** Implement proper invalidation strategy.
+
+```python
+# Delete cache on write
+def update_user(user_id, data):
+    database.update_user(user_id, data)
+    cache.delete(f"user:{user_id}")
+    cache.delete(f"user_list")  # Don't forget related caches!
+```
+
+### 3. Cache Penetration
+
+**Problem:** Repeated queries for non-existent data bypass cache and hit database.
+
+```python
+# BAD: Attackers query non-existent IDs
+def get_user(user_id):
+    cached = cache.get(f"user:{user_id}")
+    if cached:
+        return cached
+    user = database.get_user(user_id)  # Returns None, never cached
+    return user
+```
+
+**Solution:** Cache negative results or use a bloom filter.
+
+```python
+def get_user(user_id):
+    cache_key = f"user:{user_id}"
+    cached = cache.get(cache_key)
+
+    if cached == "NULL":
+        return None
+    if cached:
+        return cached
+
+    user = database.get_user(user_id)
+    if user:
+        cache.set(cache_key, user, ttl=3600)
+    else:
+        cache.set(cache_key, "NULL", ttl=300)  # Cache the miss
+
+    return user
+```
+
+## Best Practices
+
+1. **Cache at the right layer** — Choose based on data characteristics and access patterns
+
+2. **Set appropriate TTLs** — Balance freshness vs. performance
+
+3. **Monitor cache hit rates** — Aim for 90%+ hit rate on hot data
+
+4. **Plan for cache failure** — Application should work (slower) without cache
+
+5. **Use consistent hashing** — For distributed caches to minimize re-mapping on scaling
+
+6. **Implement cache warming** — Pre-populate cache for predictable traffic patterns
+
+## Related Concepts
+
+- **Redis** — Popular in-memory data structure store
+- **CDN** — Content delivery networks for static asset caching
+- **Database Query Caching** — Database-level query result caching
+- **HTTP Caching** — Browser and proxy caching with Cache-Control headers
+
+## Further Reading
+
+- Redis Documentation
+- Memcached Wiki
+- Caching Patterns by Microsoft Azure
+- Facebook's TAO: The Power of the Graph

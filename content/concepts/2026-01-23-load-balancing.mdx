@@ -1,0 +1,249 @@
+---
+title: "Load Balancing"
+slug: "load-balancing"
+date: "2026-01-23"
+category: "Infrastructure"
+difficulty: "Intermediate"
+tags: ["distributed-systems", "scalability", "networking", "high-availability"]
+description: "Understanding how load balancers distribute traffic across multiple servers to improve reliability and performance"
+---
+
+## Overview
+
+A load balancer is a critical component in distributed systems that distributes incoming network traffic across multiple servers. This ensures no single server becomes overwhelmed, improving both the reliability and performance of your application.
+
+Think of a load balancer like a traffic controller at a busy intersection—it directs incoming requests to the server best equipped to handle them at any given moment.
+
+## How Load Balancing Works
+
+When a client makes a request to your application, instead of hitting a server directly, the request first goes to the load balancer. The load balancer then decides which backend server should handle this request based on various algorithms and health checks.
+
+```
+┌─────────┐     ┌──────────────┐     ┌─────────────┐
+│ Client  │────▶│    Load      │────▶│  Server 1   │
+└─────────┘     │   Balancer   │     └─────────────┘
+                │              │     ┌─────────────┐
+                │              │────▶│  Server 2   │
+                │              │     └─────────────┘
+                │              │     ┌─────────────┐
+                │              │────▶│  Server 3   │
+                └──────────────┘     └─────────────┘
+```
+
+## Load Balancing Algorithms
+
+### Round Robin
+
+The simplest algorithm—requests are distributed sequentially across all servers. Server 1 gets the first request, Server 2 gets the second, and so on.
+
+```python
+class RoundRobinBalancer:
+    def __init__(self, servers):
+        self.servers = servers
+        self.current = 0
+
+    def get_server(self):
+        server = self.servers[self.current]
+        self.current = (self.current + 1) % len(self.servers)
+        return server
+```
+
+**Best for:** Servers with identical specifications handling similar workloads.
+
+### Weighted Round Robin
+
+Similar to round robin, but servers with higher capacity receive more requests. A server with weight 3 receives three times as many requests as a server with weight 1.
+
+```python
+class WeightedRoundRobinBalancer:
+    def __init__(self, servers_with_weights):
+        # servers_with_weights: [("server1", 3), ("server2", 1)]
+        self.servers = []
+        for server, weight in servers_with_weights:
+            self.servers.extend([server] * weight)
+        self.current = 0
+
+    def get_server(self):
+        server = self.servers[self.current]
+        self.current = (self.current + 1) % len(self.servers)
+        return server
+```
+
+**Best for:** Heterogeneous server environments where some servers are more powerful.
+
+### Least Connections
+
+Routes traffic to the server with the fewest active connections. This is dynamic and adapts to actual server load.
+
+```python
+class LeastConnectionsBalancer:
+    def __init__(self, servers):
+        self.connections = {server: 0 for server in servers}
+
+    def get_server(self):
+        return min(self.connections, key=self.connections.get)
+
+    def connect(self, server):
+        self.connections[server] += 1
+
+    def disconnect(self, server):
+        self.connections[server] -= 1
+```
+
+**Best for:** Applications with varying request processing times.
+
+### IP Hash
+
+Uses the client's IP address to determine which server receives the request. The same client always hits the same server (unless it fails).
+
+```python
+import hashlib
+
+class IPHashBalancer:
+    def __init__(self, servers):
+        self.servers = servers
+
+    def get_server(self, client_ip):
+        hash_value = int(hashlib.md5(client_ip.encode()).hexdigest(), 16)
+        return self.servers[hash_value % len(self.servers)]
+```
+
+**Best for:** Applications requiring session persistence without external session storage.
+
+## Types of Load Balancers
+
+### Layer 4 (Transport Layer)
+
+Operates at the TCP/UDP level. Makes routing decisions based on IP addresses and ports without inspecting packet contents.
+
+- **Pros:** Very fast, low latency, handles any protocol
+- **Cons:** Limited routing intelligence, can't make decisions based on content
+
+### Layer 7 (Application Layer)
+
+Operates at the HTTP level. Can inspect request content, headers, cookies, and URLs to make intelligent routing decisions.
+
+- **Pros:** Content-based routing, SSL termination, caching
+- **Cons:** Higher latency, more resource-intensive
+
+```nginx
+# NGINX Layer 7 load balancing example
+upstream backend {
+    server server1.example.com weight=3;
+    server server2.example.com;
+    server server3.example.com backup;
+}
+
+server {
+    listen 80;
+
+    location /api/ {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+## Health Checks
+
+Load balancers continuously monitor server health to avoid routing traffic to failed servers.
+
+### Passive Health Checks
+
+Monitor responses from servers during normal traffic. If a server returns errors or times out, it's marked unhealthy.
+
+### Active Health Checks
+
+Periodically send probe requests to servers to verify they're operational.
+
+```nginx
+upstream backend {
+    server server1.example.com;
+    server server2.example.com;
+
+    # Active health check configuration
+    health_check interval=5s fails=3 passes=2;
+}
+```
+
+## Common Pitfalls
+
+### 1. Session Affinity Issues
+
+**Problem:** User sessions stored on a single server are lost when the load balancer routes subsequent requests to a different server.
+
+**Solution:** Use external session storage (Redis, Memcached) or implement sticky sessions with caution.
+
+### 2. Uneven Load Distribution
+
+**Problem:** Round robin doesn't account for varying request complexity—a server handling expensive operations gets overwhelmed.
+
+**Solution:** Use least connections or implement request weighting based on endpoint complexity.
+
+### 3. Single Point of Failure
+
+**Problem:** The load balancer itself becomes a single point of failure.
+
+**Solution:** Deploy multiple load balancers with failover using tools like keepalived or cloud provider redundancy.
+
+### 4. Health Check Storms
+
+**Problem:** Too many health check requests overwhelming servers or network.
+
+**Solution:** Tune health check intervals and use passive checks where possible.
+
+## Best Practices
+
+1. **Always have redundant load balancers** — Use active-passive or active-active configurations
+
+2. **Implement proper health checks** — Check actual application health, not just TCP connectivity
+
+3. **Use connection draining** — Allow existing connections to complete before removing a server
+
+4. **Monitor and alert** — Track metrics like request rate, latency, and error rates per backend
+
+5. **Plan for SSL termination** — Decide whether to terminate SSL at the load balancer or pass through
+
+## Real-World Example: HAProxy Configuration
+
+```haproxy
+global
+    log /dev/log local0
+    maxconn 4096
+
+defaults
+    mode http
+    timeout connect 5s
+    timeout client 30s
+    timeout server 30s
+    option httplog
+    option dontlognull
+
+frontend http_front
+    bind *:80
+    default_backend http_back
+
+backend http_back
+    balance roundrobin
+    option httpchk GET /health
+    http-check expect status 200
+
+    server server1 10.0.0.1:8080 check weight 3
+    server server2 10.0.0.2:8080 check weight 2
+    server server3 10.0.0.3:8080 check weight 1 backup
+```
+
+## Related Concepts
+
+- **Reverse Proxy** — Often combined with load balancing
+- **CDN** — Geographic load distribution
+- **Auto-scaling** — Dynamically adding/removing servers based on load
+- **Service Mesh** — Load balancing in microservices architectures
+
+## Further Reading
+
+- NGINX Load Balancing Documentation
+- HAProxy Configuration Manual
+- AWS Elastic Load Balancing
+- Google Cloud Load Balancing

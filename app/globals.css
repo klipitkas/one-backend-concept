@@ -1,0 +1,659 @@
+@import 'tailwindcss';
+
+@theme {
+  /* Geist fonts */
+  --font-family-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-family-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Theme colors for Tailwind */
+  --color-background: var(--color-background);
+  --color-foreground: var(--color-foreground);
+  --color-surface: var(--color-surface);
+  --color-border: var(--color-border);
+  --color-muted: var(--color-muted);
+  --color-accent: var(--color-accent);
+  --color-green: var(--color-green);
+  --color-yellow: var(--color-yellow);
+  --color-red: var(--color-red);
+  --color-purple: var(--color-purple);
+  --color-blue: var(--color-blue);
+}
+
+/* ============================================
+   ARCTIC TERMINAL - Nord-inspired Dark Theme
+   ============================================
+   A sophisticated dark theme that complements
+   Nord syntax highlighting with deep, inky
+   backgrounds and aurora-inspired accents.
+   ============================================ */
+
+:root {
+  /* Softer dark backgrounds with warm undertones */
+  --color-background: #1a1d23;
+  --color-surface: #22262e;
+  --color-elevated: #282d36;
+  --color-border: #363c47;
+
+  /* Softer text - less harsh white, warmer tones */
+  --color-foreground: #c9d1d9;
+  --color-muted: #8b929a;
+  --color-subtle: #545d68;
+
+  /* Muted aurora accents - less saturated for comfort */
+  --color-accent: #7eb8c4;
+  --color-accent-soft: rgba(126, 184, 196, 0.12);
+  --color-green: #98b386;
+  --color-purple: #a8849e;
+  --color-blue: #7a99b5;
+  --color-yellow: #d9be7e;
+  --color-red: #b35d64;
+
+  /* Code blocks - slightly elevated from background */
+  --color-pre-bg: #161920;
+  --color-pre-border: #2d333b;
+
+  /* Gradients - subtle */
+  --gradient-surface: linear-gradient(
+    180deg,
+    var(--color-surface) 0%,
+    var(--color-background) 100%
+  );
+  --gradient-glow: radial-gradient(
+    ellipse 80% 50% at 50% -20%,
+    rgba(126, 184, 196, 0.06),
+    transparent
+  );
+}
+
+/* Light theme - Warm cream tones */
+:root.light {
+  --color-background: #f8f6f1;
+  --color-surface: #fdfcf9;
+  --color-elevated: #ffffff;
+  --color-border: #e4e0d8;
+
+  --color-foreground: #3d3d3d;
+  --color-muted: #6b6b6b;
+  --color-subtle: #9a9a9a;
+
+  --color-accent: #4a8f9c;
+  --color-accent-soft: rgba(74, 143, 156, 0.1);
+  --color-green: #5a8a5a;
+  --color-purple: #7a6a8a;
+  --color-blue: #5a7a9a;
+  --color-yellow: #9a8a5a;
+  --color-red: #9a5a5a;
+
+  --color-pre-bg: #f3f1eb;
+  --color-pre-border: #e4e0d8;
+
+  --gradient-surface: linear-gradient(
+    180deg,
+    var(--color-surface) 0%,
+    var(--color-background) 100%
+  );
+  --gradient-glow: radial-gradient(
+    ellipse 80% 50% at 50% -20%,
+    rgba(74, 143, 156, 0.05),
+    transparent
+  );
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle top glow effect */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 400px;
+  background: var(--gradient-glow);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-subtle);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+/* ============================================
+   CODE STYLING
+   ============================================ */
+
+pre,
+pre code,
+pre span,
+code,
+.code-block pre,
+.code-block code,
+.code-block span {
+  font-family: var(--font-geist-mono), ui-monospace, monospace !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.7 !important;
+}
+
+pre {
+  overflow-x: auto;
+}
+
+pre::-webkit-scrollbar {
+  height: 6px;
+}
+
+pre::-webkit-scrollbar-track {
+  background: var(--color-pre-bg);
+}
+
+pre::-webkit-scrollbar-thumb {
+  background: var(--color-subtle);
+  border-radius: 3px;
+}
+
+/* ============================================
+   SELECTION
+   ============================================ */
+
+::selection {
+  background-color: var(--color-accent);
+  color: var(--color-background);
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.font-mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* ============================================
+   PROSE STYLING
+   ============================================ */
+
+.prose {
+  --tw-prose-body: var(--color-foreground);
+  --tw-prose-headings: var(--color-foreground);
+  --tw-prose-lead: var(--color-muted);
+  --tw-prose-links: var(--color-accent);
+  --tw-prose-bold: var(--color-foreground);
+  --tw-prose-counters: var(--color-muted);
+  --tw-prose-bullets: var(--color-accent);
+  --tw-prose-hr: var(--color-border);
+  --tw-prose-quotes: var(--color-muted);
+  --tw-prose-quote-borders: var(--color-accent);
+  --tw-prose-captions: var(--color-muted);
+  --tw-prose-code: var(--color-accent);
+  --tw-prose-pre-code: #b0b8c2;
+  --tw-prose-pre-bg: var(--color-pre-bg);
+  --tw-prose-th-borders: var(--color-border);
+  --tw-prose-td-borders: var(--color-border);
+  color: var(--tw-prose-body);
+  max-width: 65ch;
+  line-height: 1.85;
+  letter-spacing: 0.01em;
+}
+
+.prose :where(p):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+
+.prose :where(p):first-child {
+  margin-top: 0;
+}
+
+.prose :where(h1):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  color: var(--tw-prose-headings);
+  font-weight: 700;
+  font-size: 2.25em;
+  margin-top: 0;
+  margin-bottom: 0.8888889em;
+  line-height: 1.1111111;
+  letter-spacing: -0.025em;
+}
+
+.prose :where(h2):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  color: var(--color-foreground);
+  font-weight: 600;
+  font-size: 1.5em;
+  margin-top: 2em;
+  margin-bottom: 1em;
+  line-height: 1.3333333;
+  letter-spacing: -0.02em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.prose :where(h3):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  color: var(--tw-prose-headings);
+  font-weight: 600;
+  font-size: 1.25em;
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+  line-height: 1.6;
+}
+
+.prose :where(a):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  color: var(--tw-prose-links);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.prose
+  :where(a):not(:where([class~='not-prose'], [class~='not-prose'] *)):hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.prose
+  :where(strong):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  color: var(--tw-prose-bold);
+  font-weight: 600;
+}
+
+.prose :where(ul):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  list-style-type: none;
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  padding-inline-start: 0;
+}
+
+.prose
+  :where(ul > li):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  position: relative;
+  padding-left: 1.5em;
+}
+
+.prose
+  :where(ul > li):not(
+    :where([class~='not-prose'], [class~='not-prose'] *)
+  )::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.75em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-accent);
+}
+
+.prose :where(ol):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  list-style-type: decimal;
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  padding-inline-start: 1.625em;
+}
+
+.prose
+  :where(ol > li):not(
+    :where([class~='not-prose'], [class~='not-prose'] *)
+  )::marker {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.prose :where(li):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.prose :where(hr):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  border-color: var(--tw-prose-hr);
+  border-top-width: 1px;
+  margin-top: 3em;
+  margin-bottom: 3em;
+}
+
+.prose
+  :where(blockquote):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  font-weight: 400;
+  font-style: normal;
+  color: var(--color-muted);
+  border-inline-start-width: 3px;
+  border-inline-start-color: var(--color-accent);
+  background-color: var(--color-accent-soft);
+  margin-top: 1.6em;
+  margin-bottom: 1.6em;
+  padding: 1em 1.25em;
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.prose
+  :where(code):not(:where([class~='not-prose'], [class~='not-prose'] *)):not(
+    pre code
+  ) {
+  color: var(--color-accent);
+  font-weight: 500;
+  background-color: var(--color-accent-soft);
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.375rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+}
+
+.prose
+  :where(code):not(
+    :where([class~='not-prose'], [class~='not-prose'] *)
+  )::before,
+.prose
+  :where(code):not(
+    :where([class~='not-prose'], [class~='not-prose'] *)
+  )::after {
+  content: '';
+}
+
+.prose :where(pre):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  color: var(--tw-prose-pre-code);
+  background-color: var(--color-pre-bg);
+  overflow-x: auto;
+  font-weight: 400;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+  border-radius: 0.5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--color-pre-border);
+}
+
+.prose-invert {
+  --tw-prose-body: var(--color-foreground);
+  --tw-prose-headings: var(--color-foreground);
+  --tw-prose-lead: var(--color-muted);
+  --tw-prose-links: var(--color-accent);
+  --tw-prose-bold: var(--color-foreground);
+  --tw-prose-counters: var(--color-muted);
+  --tw-prose-bullets: var(--color-accent);
+  --tw-prose-hr: var(--color-border);
+  --tw-prose-quotes: var(--color-muted);
+  --tw-prose-quote-borders: var(--color-accent);
+  --tw-prose-captions: var(--color-muted);
+  --tw-prose-code: var(--color-accent);
+  --tw-prose-pre-code: #b0b8c2;
+  --tw-prose-pre-bg: var(--color-pre-bg);
+  --tw-prose-th-borders: var(--color-border);
+  --tw-prose-td-borders: var(--color-border);
+}
+
+/* ============================================
+   LEAD TEXT
+   ============================================ */
+
+.lead {
+  font-size: 1.25em;
+  line-height: 1.6;
+  color: var(--color-muted);
+}
+
+/* ============================================
+   CODE BLOCK WRAPPER
+   ============================================ */
+
+.code-block {
+  position: relative;
+  background-color: var(--color-pre-bg);
+  border: 1px solid var(--color-pre-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.code-block .code-lang {
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-pre-border);
+  color: var(--color-muted);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  padding: 0.5rem 1.25rem;
+}
+
+.code-block pre,
+.code-block .overflow-x-auto pre {
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 1rem !important;
+  background-color: var(--color-pre-bg) !important;
+}
+
+.code-block .overflow-x-auto {
+  padding: 0;
+}
+
+/* ============================================
+   SOFT NORD SYNTAX HIGHLIGHTING
+   Muted colors for comfortable reading
+   ============================================ */
+
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: #5c6370;
+  font-style: italic;
+}
+
+.token.punctuation {
+  color: #7f8590;
+}
+
+.token.namespace {
+  opacity: 0.8;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted {
+  color: #a8849e;
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted {
+  color: #98b386;
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+  color: #7a99b5;
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  color: #7a99b5;
+}
+
+.token.function,
+.token.class-name {
+  color: #7eb8c4;
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+  color: #d9be7e;
+}
+
+.token.important,
+.token.bold {
+  font-weight: 600;
+}
+
+.token.italic {
+  font-style: italic;
+}
+
+.token.entity {
+  cursor: help;
+}
+
+/* ============================================
+   INTERACTIVE ELEMENTS
+   ============================================ */
+
+/* Links */
+a {
+  transition:
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+/* Buttons and interactive surfaces */
+.interactive {
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.interactive:hover {
+  transform: translateY(-1px);
+}
+
+/* Cards */
+.card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--color-accent);
+  box-shadow:
+    0 0 0 1px var(--color-accent-soft),
+    0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================
+   BADGES
+   ============================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 9999px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  transition: all 0.15s ease;
+}
+
+.badge-accent {
+  background-color: var(--color-accent-soft);
+  border-color: transparent;
+  color: var(--color-accent);
+}
+
+/* ============================================
+   HEADER GLOW EFFECT
+   ============================================ */
+
+.header-glow {
+  position: relative;
+}
+
+.header-glow::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-accent) 20%,
+    var(--color-accent) 80%,
+    transparent
+  );
+  opacity: 0.3;
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease forwards;
+}
+
+/* Staggered delays */
+.delay-1 {
+  animation-delay: 0.1s;
+}
+.delay-2 {
+  animation-delay: 0.2s;
+}
+.delay-3 {
+  animation-delay: 0.3s;
+}
+.delay-4 {
+  animation-delay: 0.4s;
+}
