@@ -6,6 +6,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Archive",
   description: "Browse all backend concepts and system design topics",
+  alternates: {
+    canonical: "/archive",
+  },
 };
 
 export default function ArchivePage() {

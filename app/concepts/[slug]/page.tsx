@@ -1,10 +1,12 @@
 import { TableOfContents } from '@/components/content/TableOfContents';
+import { JsonLd } from '@/components/JsonLd';
 import { Badge } from '@/components/ui/Badge';
 import {
   getAllConcepts,
   getConceptBySlug,
   getConceptSlugs,
 } from '@/lib/content';
+import { SITE_URL, SITE_NAME } from '@/lib/constants';
 import { highlightCode } from '@/lib/prism';
 import { formatDate, getDifficultyColor } from '@/lib/utils';
 import type { Metadata } from 'next';
@@ -34,6 +36,21 @@ export async function generateMetadata({
     title: concept.title,
     description: concept.description,
     keywords: concept.tags,
+    openGraph: {
+      type: 'article',
+      title: concept.title,
+      description: concept.description,
+      publishedTime: concept.date,
+      tags: concept.tags,
+    },
+    twitter: {
+      card: 'summary',
+      title: concept.title,
+      description: concept.description,
+    },
+    alternates: {
+      canonical: `/concepts/${slug}`,
+    },
   };
 }
 
@@ -202,6 +219,21 @@ export default async function ConceptPage({ params }: PageProps) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
+      <JsonLd
+        data={{
+          '@context': 'https://schema.org',
+          '@type': 'Article',
+          headline: concept.title,
+          description: concept.description,
+          datePublished: concept.date,
+          keywords: concept.tags.join(', '),
+          url: `${SITE_URL}/concepts/${slug}`,
+          publisher: {
+            '@type': 'Organization',
+            name: SITE_NAME,
+          },
+        }}
+      />
       <div className="lg:grid lg:grid-cols-[1fr_200px] lg:gap-12">
         <div>
           {/* Header */}

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://klipitkas.github.io/one-backend-concept/sitemap.xml
