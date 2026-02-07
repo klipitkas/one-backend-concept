@@ -16,7 +16,7 @@ export default function HomePage() {
           One Backend Concept
         </h1>
         <p className="mt-4 text-lg text-muted">
-          Learn one backend engineering concept every day at 12:00 UTC.
+          Learn one backend engineering concept every day at 00:00 UTC.
           <br />
           Deep dives into system design, databases, caching, and more.
         </p>

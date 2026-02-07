@@ -77,7 +77,7 @@ export function SubscribeForm() {
         </form>
 
         <p className="mt-4 text-xs text-muted">
-          Daily at 12:00 UTC. Free forever.
+          Daily at 00:00 UTC. Free forever.
         </p>
       </div>
     </section>

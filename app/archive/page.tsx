@@ -54,7 +54,7 @@ export default function ArchivePage() {
         <div className="rounded-lg border border-border bg-surface p-12 text-center">
           <p className="text-muted">No concepts published yet.</p>
           <p className="mt-2 text-sm text-muted">
-            Check back at 12:00 UTC for the first concept!
+            Check back at 00:00 UTC for the first concept!
           </p>
         </div>
       ) : (

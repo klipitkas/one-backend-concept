@@ -21,7 +21,7 @@ export default function AboutPage() {
 
         <h2>What We Cover</h2>
         <p>
-          Every day at 12:00 UTC, we publish a new in-depth article covering a
+          Every day at 00:00 UTC, we publish a new in-depth article covering a
           fundamental backend concept. Topics include:
         </p>
         <ul>
@@ -54,7 +54,6 @@ export default function AboutPage() {
         <p>Each concept article includes:</p>
         <ol>
           <li>A brief overview of the concept</li>
-          <li>Visual diagrams to illustrate the architecture</li>
           <li>Detailed explanations with code examples</li>
           <li>Real-world use cases</li>
           <li>Common pitfalls and how to avoid them</li>
@@ -72,9 +71,9 @@ export default function AboutPage() {
 
         <h2>Stay Updated</h2>
         <p>
-          Bookmark this site and visit daily, or follow us on social media for
-          concept announcements. Each article is carefully crafted to be
-          comprehensive yet digestible in a single sitting.
+          Bookmark this site and visit daily for new concepts. Each article is
+          carefully crafted to be comprehensive yet digestible in a single
+          sitting.
         </p>
 
         <hr />
