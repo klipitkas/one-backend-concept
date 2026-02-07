@@ -1,0 +1,106 @@
+---
+title: "Circuit Breakers"
+slug: "circuit-breakers"
+date: "2026-01-26"
+category: "Reliability"
+difficulty: "Intermediate"
+tags: ["reliability", "distributed-systems", "fault-tolerance", "resilience"]
+description: "How the circuit breaker pattern prevents cascading failures in distributed systems"
+---
+
+## Overview
+
+A circuit breaker wraps calls to an external service and monitors for failures. When failures exceed a threshold, the breaker "trips" and immediately rejects subsequent calls without attempting the request. After a cooldown period, it lets a test request through to see if the service has recovered.
+
+The name comes from electrical circuit breakers — they cut the circuit to prevent damage.
+
+## The Three States
+
+```
+         success
+  ┌──────────────────┐
+  │                  ▼
+CLOSED ──failures──▶ OPEN ──timeout──▶ HALF-OPEN
+  ▲                                      │
+  └──────────success──────────────────────┘
+              failure → back to OPEN
+```
+
+- **Closed** — Requests flow normally. Failures are counted. If failures hit the threshold, transition to Open.
+- **Open** — All requests fail immediately with a fallback response. No calls to the downstream service. After a timeout, transition to Half-Open.
+- **Half-Open** — Allow one test request through. If it succeeds, go back to Closed. If it fails, go back to Open.
+
+## Implementation
+
+```python
+import time
+
+class CircuitBreaker:
+    def __init__(self, failure_threshold=5, reset_timeout=30):
+        self.failure_threshold = failure_threshold
+        self.reset_timeout = reset_timeout
+        self.failure_count = 0
+        self.state = "closed"
+        self.last_failure_time = None
+
+    def call(self, func, *args, **kwargs):
+        if self.state == "open":
+            if time.time() - self.last_failure_time > self.reset_timeout:
+                self.state = "half-open"
+            else:
+                raise CircuitOpenError("Circuit is open")
+
+        try:
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise
+
+    def _on_success(self):
+        self.failure_count = 0
+        self.state = "closed"
+
+    def _on_failure(self):
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = "open"
+```
+
+## Usage
+
+```python
+payment_breaker = CircuitBreaker(failure_threshold=3, reset_timeout=60)
+
+def charge_customer(amount):
+    try:
+        return payment_breaker.call(payment_api.charge, amount)
+    except CircuitOpenError:
+        return queue_for_retry(amount)  # Fallback
+```
+
+## Why It Matters
+
+Without circuit breakers, a failing downstream service causes:
+
+1. **Thread pool exhaustion** — Requests pile up waiting for timeouts
+2. **Cascading failures** — Service A waits on B, B waits on C, everything slows down
+3. **No recovery time** — The failing service gets hammered with requests the moment it comes back
+
+A circuit breaker gives the failing service breathing room to recover.
+
+## Common Pitfalls
+
+- **Threshold too low** — Transient errors trip the breaker unnecessarily. Combine with retries for intermittent failures
+- **Threshold too high** — The breaker trips too late and damage is already done
+- **No fallback** — A tripped breaker should return a cached response, default value, or graceful error — not crash
+- **Shared breakers** — One breaker per dependency. Don't share a breaker across unrelated services
+
+## Related Concepts
+
+- **Retries with Backoff** — Handle transient failures before the breaker trips
+- **Bulkhead Pattern** — Isolate resources per dependency to limit blast radius
+- **Health Checks** — Monitor service health proactively
+- **Rate Limiting** — Control request volume from the sender's side

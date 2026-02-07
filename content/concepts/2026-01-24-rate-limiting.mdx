@@ -1,0 +1,98 @@
+---
+title: "Rate Limiting"
+slug: "rate-limiting"
+date: "2026-01-24"
+category: "Security"
+difficulty: "Beginner"
+tags: ["security", "api-design", "reliability", "networking"]
+description: "How rate limiting protects your API from abuse and ensures fair usage across clients"
+---
+
+## Overview
+
+Rate limiting controls how many requests a client can make to your API within a time window. Without it, a single client can overwhelm your servers — whether through a bug, a scraper, or a deliberate attack.
+
+## Common Algorithms
+
+### Fixed Window
+
+Count requests in fixed time intervals (e.g., per minute). Simple but allows bursts at window boundaries — a client could make 100 requests at 11:59 and another 100 at 12:00.
+
+```python
+def is_allowed(client_id: str, limit: int = 100, window: int = 60) -> bool:
+    key = f"rate:{client_id}:{int(time.time()) // window}"
+    count = redis.incr(key)
+    if count == 1:
+        redis.expire(key, window)
+    return count <= limit
+```
+
+### Sliding Window Log
+
+Track timestamps of each request. More accurate than fixed window but uses more memory.
+
+```python
+def is_allowed(client_id: str, limit: int = 100, window: int = 60) -> bool:
+    now = time.time()
+    key = f"rate:{client_id}"
+
+    # Remove old entries
+    redis.zremrangebyscore(key, 0, now - window)
+
+    if redis.zcard(key) < limit:
+        redis.zadd(key, {str(now): now})
+        redis.expire(key, window)
+        return True
+    return False
+```
+
+### Token Bucket
+
+A bucket fills with tokens at a steady rate. Each request consumes a token. Allows controlled bursts while enforcing an average rate.
+
+```
+Bucket capacity: 10 tokens
+Refill rate: 2 tokens/second
+
+Request 1: 10 tokens → 9 tokens ✓
+Request 2: 9 tokens  → 8 tokens ✓
+...burst of 8 more...
+Request 10: 1 token  → 0 tokens ✓
+Request 11: 0 tokens → REJECTED ✗
+(wait 0.5s → 1 token refilled)
+Request 12: 1 token  → 0 tokens ✓
+```
+
+## Where to Apply Rate Limits
+
+- **API gateway** — Catch abuse before it reaches your services
+- **Per endpoint** — Stricter limits on expensive operations (search, uploads)
+- **Per user/API key** — Fair usage across clients
+- **Globally** — Protect total system capacity
+
+## Response Headers
+
+Tell clients about their rate limit status using standard headers:
+
+```
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 42
+X-RateLimit-Reset: 1706140800
+
+HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+```
+
+## Common Pitfalls
+
+- **No rate limiting at all** — Your database will thank you for adding it
+- **Only limiting by IP** — Shared IPs (offices, VPNs) penalize legitimate users. Prefer API keys or user IDs
+- **Forgetting distributed state** — In-memory counters don't work with multiple server instances. Use Redis or a similar shared store
+- **Silent failures** — Always return 429 with `Retry-After` so clients can back off gracefully
+
+## Related Concepts
+
+- **API Gateway** — Central place to enforce rate limits
+- **Circuit Breakers** — Protecting downstream services from overload
+- **DDoS Mitigation** — Rate limiting at the network edge

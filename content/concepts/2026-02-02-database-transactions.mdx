@@ -1,0 +1,82 @@
+---
+title: "Database Transactions & ACID"
+slug: "database-transactions"
+date: "2026-02-02"
+category: "Databases"
+difficulty: "Beginner"
+tags: ["databases", "reliability", "sql", "consistency"]
+description: "How transactions group operations into atomic units and what ACID guarantees mean in practice"
+---
+
+## Overview
+
+A transaction groups multiple database operations into a single unit that either fully succeeds or fully fails. There's no in-between — you never end up with a half-completed transfer where money left one account but didn't arrive in another.
+
+```sql
+BEGIN;
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT;
+```
+
+If anything fails between `BEGIN` and `COMMIT`, the database rolls everything back as if nothing happened.
+
+## ACID Properties
+
+### Atomicity
+
+All or nothing. If any operation in the transaction fails, all changes are rolled back.
+
+### Consistency
+
+The database moves from one valid state to another. Constraints (foreign keys, unique indexes, check constraints) are enforced.
+
+### Isolation
+
+Concurrent transactions don't interfere with each other. Each transaction sees a consistent snapshot of the data.
+
+### Durability
+
+Once committed, the data survives crashes, power loss, and restarts. The database writes to disk (WAL) before confirming the commit.
+
+## Isolation Levels
+
+Isolation is a spectrum. Stricter isolation is safer but slower.
+
+| Level | Dirty Reads | Non-Repeatable Reads | Phantom Reads |
+|-------|:-----------:|:--------------------:|:-------------:|
+| Read Uncommitted | Yes | Yes | Yes |
+| Read Committed | No | Yes | Yes |
+| Repeatable Read | No | No | Yes |
+| Serializable | No | No | No |
+
+**Read Committed** is the default in PostgreSQL and the right choice for most applications. Use **Serializable** only when you need strict correctness (financial calculations, inventory counts).
+
+```sql
+-- Set isolation level per transaction
+BEGIN ISOLATION LEVEL SERIALIZABLE;
+  SELECT quantity FROM inventory WHERE sku = 'WIDGET-1';
+  -- Application logic: check if quantity >= order amount
+  UPDATE inventory SET quantity = quantity - 1 WHERE sku = 'WIDGET-1';
+COMMIT;
+```
+
+## Common Pitfalls
+
+- **Long-running transactions** — Hold locks for the minimum time possible. Fetch data, do your logic, then open the transaction only for the writes
+- **Forgetting to commit/rollback** — Idle open transactions hold locks and block other queries. Use connection pool timeout settings as a safety net
+- **Assuming isolation** — Read Committed doesn't prevent a row from changing between two SELECTs in the same transaction. Know your isolation level
+- **Deadlocks** — Two transactions each waiting for the other's lock. Access tables and rows in a consistent order to minimize deadlocks
+
+## In Distributed Systems
+
+Single-database ACID is well-solved. Across multiple databases or services, it gets hard. Common approaches:
+
+- **Saga pattern** — A sequence of local transactions with compensating actions on failure
+- **Two-phase commit (2PC)** — Coordinator asks all participants to prepare, then commit. Reliable but slow and blocks on coordinator failure
+
+## Related Concepts
+
+- **Database Indexing** — Indexes interact with locking and transaction performance
+- **Connection Pooling** — Leaked connections often mean leaked transactions
+- **Event Sourcing** — An alternative to traditional transactions for some use cases

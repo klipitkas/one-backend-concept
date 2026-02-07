@@ -1,9 +1,11 @@
+import { ConceptSearch } from "@/components/ConceptSearch";
+import { SubscribeForm } from "@/components/SubscribeForm";
 import { ConceptCard } from "@/components/ui/Card";
 import { getAllConcepts, getRecentConcepts } from "@/lib/content";
 import Link from "next/link";
 
 export default function HomePage() {
-  const recentConcepts = getRecentConcepts(5);
+  const recentConcepts = getRecentConcepts(11);
   const allConcepts = getAllConcepts();
 
   return (
@@ -25,6 +27,20 @@ export default function HomePage() {
           </span>
         </div>
       </section>
+
+      {/* Search */}
+      <ConceptSearch
+        concepts={allConcepts.map((c) => ({
+          slug: c.slug,
+          title: c.title,
+          description: c.description,
+          date: c.date,
+          category: c.category,
+          difficulty: c.difficulty,
+          tags: c.tags,
+          readingTime: c.readingTime,
+        }))}
+      />
 
       {/* Featured/Latest Concept */}
       {recentConcepts[0] && (
@@ -50,24 +66,18 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* CTA */}
-      <section className="rounded-lg border border-border bg-surface p-8 text-center">
-        <h2 className="text-xl font-semibold">
-          Ready to master backend engineering?
-        </h2>
-        <p className="mt-2 text-muted">
-          Browse all concepts or bookmark this page for your daily learning.
-        </p>
-        <div className="mt-6">
-          <Link
-            href="/archive"
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-medium text-white transition-colors hover:bg-accent/90"
-          >
-            Browse All Concepts
-            <span aria-hidden="true">&rarr;</span>
-          </Link>
-        </div>
-      </section>
+      {/* Subscribe */}
+      <SubscribeForm />
+
+      {/* Browse All Link */}
+      <div className="mt-8 text-center">
+        <Link
+          href="/archive"
+          className="text-muted transition-colors hover:text-accent"
+        >
+          Browse all concepts &rarr;
+        </Link>
+      </div>
     </div>
   );
 }

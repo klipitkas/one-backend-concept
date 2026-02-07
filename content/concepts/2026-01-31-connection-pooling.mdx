@@ -1,0 +1,72 @@
+---
+title: "Connection Pooling"
+slug: "connection-pooling"
+date: "2026-01-31"
+category: "Databases"
+difficulty: "Beginner"
+tags: ["databases", "performance", "networking", "scalability"]
+description: "Why creating a new database connection per request is wasteful and how connection pools solve it"
+---
+
+## Overview
+
+Opening a database connection is expensive — it involves TCP handshake, authentication, SSL negotiation, and memory allocation on the server. A connection pool maintains a set of reusable connections so your application doesn't pay this cost for every request.
+
+```
+Without pooling:
+Request 1 → open connection → query → close connection  (50ms overhead)
+Request 2 → open connection → query → close connection  (50ms overhead)
+
+With pooling:
+Request 1 → borrow connection → query → return to pool   (0ms overhead)
+Request 2 → borrow connection → query → return to pool   (0ms overhead)
+```
+
+## How It Works
+
+The pool pre-creates a set of connections at startup. When your application needs a connection, it borrows one from the pool. When done, it returns it instead of closing it.
+
+```python
+# SQLAlchemy connection pool
+from sqlalchemy import create_engine
+
+engine = create_engine(
+    "postgresql://user:pass@localhost/db",
+    pool_size=20,        # Maintain 20 connections
+    max_overflow=10,     # Allow 10 extra under load
+    pool_timeout=30,     # Wait 30s for a connection before error
+    pool_recycle=1800,   # Recycle connections after 30 min
+)
+```
+
+## Key Parameters
+
+- **pool_size** — Number of persistent connections. Too low: requests queue up. Too high: database gets overloaded.
+- **max_overflow** — Extra connections allowed during traffic spikes, closed when no longer needed.
+- **pool_timeout** — How long to wait for a connection before raising an error.
+- **pool_recycle** — Max lifetime of a connection. Prevents stale connections from accumulating (important when firewalls or databases kill idle connections).
+
+## External Connection Poolers
+
+When you have many application instances, each with their own pool, the total connections can overwhelm the database. External poolers sit between your app and the database.
+
+```
+App Instance 1 (20 conns) ─┐
+App Instance 2 (20 conns) ─┼──▶ [PgBouncer] ──▶ PostgreSQL (50 conns)
+App Instance 3 (20 conns) ─┘
+```
+
+**PgBouncer** (PostgreSQL) and **ProxySQL** (MySQL) multiplex hundreds of application connections into a smaller number of database connections.
+
+## Common Pitfalls
+
+- **Connection leaks** — Borrowing a connection but never returning it (e.g., exception before cleanup). Always use context managers or try/finally
+- **Pool too large** — Each connection consumes ~10MB on PostgreSQL. 200 connections = 2GB just for connections. Use an external pooler instead
+- **Not recycling** — Stale connections cause intermittent errors. Set `pool_recycle` shorter than your database's `wait_timeout`
+- **Serverless mismatch** — Lambda/serverless functions scale to thousands of instances, each opening connections. Use an external pooler or a managed proxy (RDS Proxy, Neon pooler)
+
+## Related Concepts
+
+- **Database Replication** — Read replicas need their own pools
+- **Database Sharding** — Each shard needs its own connection pool
+- **HTTP Keep-Alive** — The same idea applied to HTTP connections

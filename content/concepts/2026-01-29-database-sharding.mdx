@@ -1,0 +1,78 @@
+---
+title: "Database Sharding"
+slug: "database-sharding"
+date: "2026-01-29"
+category: "Databases"
+difficulty: "Advanced"
+tags: ["databases", "scalability", "distributed-systems", "partitioning"]
+description: "Splitting a database across multiple servers to handle data that outgrows a single machine"
+---
+
+## Overview
+
+Sharding splits a single database into smaller pieces (shards), each living on a separate server. Each shard holds a subset of the data. Unlike replication (copies of the same data), sharding divides the data so no single server needs to hold it all.
+
+You shard when your data or write throughput exceeds what one server can handle.
+
+## Sharding Strategies
+
+### Range-Based
+
+Assign rows to shards based on a value range.
+
+```
+Shard 1: user_id 1 - 1,000,000
+Shard 2: user_id 1,000,001 - 2,000,000
+Shard 3: user_id 2,000,001 - 3,000,000
+```
+
+Simple to implement, but prone to hotspots. If new users are the most active, the latest shard gets hammered.
+
+### Hash-Based
+
+Hash the shard key and distribute evenly.
+
+```python
+def get_shard(user_id: int, num_shards: int) -> int:
+    return hash(user_id) % num_shards
+```
+
+Even distribution, but range queries across shards become expensive. Adding shards requires rehashing (use consistent hashing to minimize data movement).
+
+### Directory-Based
+
+A lookup table maps each key to its shard. Maximum flexibility but the directory itself is a single point of failure and a bottleneck.
+
+## What Makes a Good Shard Key
+
+- **High cardinality** — Many distinct values for even distribution
+- **Frequently used in queries** — So most queries hit a single shard
+- **Stable** — Changing the shard key means moving data between shards
+
+Common shard keys: `user_id`, `tenant_id`, `region`. Bad shard keys: `status`, `created_date` (low cardinality or monotonically increasing).
+
+## Cross-Shard Queries
+
+The biggest pain point. A query like `SELECT * FROM orders WHERE product_id = 5` must fan out to every shard if the data is sharded by `user_id`.
+
+```
+App → Shard 1: SELECT ... WHERE product_id = 5
+    → Shard 2: SELECT ... WHERE product_id = 5
+    → Shard 3: SELECT ... WHERE product_id = 5
+    → Merge results
+```
+
+Minimize cross-shard queries by co-locating related data on the same shard (e.g., a user's orders live on the same shard as the user).
+
+## Common Pitfalls
+
+- **Sharding too early** — Sharding adds enormous complexity. Exhaust vertical scaling, read replicas, and caching first
+- **Wrong shard key** — Changing it later means a painful data migration. Think carefully upfront
+- **Uneven shards** — Some shards grow faster than others. Monitor shard sizes and plan for rebalancing
+- **Distributed joins** — JOINs across shards are slow and complex. Denormalize data or use application-level joins
+
+## Related Concepts
+
+- **Database Replication** — Copies data for availability; sharding splits data for scale
+- **Consistent Hashing** — Minimizes data movement when adding or removing shards
+- **Database Indexing** — Still critical within each shard

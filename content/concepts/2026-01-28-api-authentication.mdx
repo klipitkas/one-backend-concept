@@ -1,0 +1,96 @@
+---
+title: "API Authentication"
+slug: "api-authentication"
+date: "2026-01-28"
+category: "Security"
+difficulty: "Beginner"
+tags: ["security", "api-design", "authentication", "jwt"]
+description: "Common approaches to authenticating API requests, from API keys to JWTs to OAuth"
+---
+
+## Overview
+
+Authentication answers "who is making this request?" Every API that serves user-specific data or performs actions on behalf of a user needs it. The approach you choose affects security, scalability, and developer experience.
+
+## API Keys
+
+A static secret string included with each request. Simple but limited.
+
+```
+GET /api/data HTTP/1.1
+Authorization: Bearer sk_live_abc123def456
+```
+
+**Good for:** Server-to-server communication, third-party API access.
+**Bad for:** End-user authentication (keys are long-lived, hard to scope per-user).
+
+## Session-Based Auth
+
+Server stores session state. The client receives a session ID in a cookie.
+
+```
+1. POST /login  { email, password }
+2. Server creates session in Redis: session:abc → { user_id: 42 }
+3. Response: Set-Cookie: session_id=abc
+4. Subsequent requests include cookie automatically
+5. Server looks up session:abc → knows it's user 42
+```
+
+**Good for:** Traditional web apps, server-rendered pages.
+**Bad for:** Mobile apps, cross-origin APIs (cookie handling is painful).
+
+## JWT (JSON Web Tokens)
+
+A self-contained, signed token the client sends with each request. The server verifies the signature without any database lookup.
+
+```
+Header:  { "alg": "HS256", "typ": "JWT" }
+Payload: { "sub": "42", "email": "user@example.com", "exp": 1706140800 }
+Signature: HMAC-SHA256(header + payload, secret)
+```
+
+```python
+import jwt
+
+# Create token
+token = jwt.encode(
+    {"sub": "42", "exp": datetime.utcnow() + timedelta(hours=1)},
+    SECRET_KEY,
+    algorithm="HS256"
+)
+
+# Verify token
+payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+user_id = payload["sub"]
+```
+
+**Good for:** Stateless APIs, microservices, mobile apps.
+**Bad for:** Situations where you need instant revocation (JWTs are valid until they expire).
+
+## OAuth 2.0
+
+A delegation protocol. Users grant your app limited access to their data on another service without sharing their password.
+
+```
+1. User clicks "Login with GitHub"
+2. Redirect to GitHub: /authorize?client_id=X&scope=read:user
+3. User approves → GitHub redirects back with a code
+4. Your server exchanges code for access_token (server-to-server)
+5. Use access_token to call GitHub API on behalf of user
+```
+
+**Good for:** "Login with X" flows, accessing third-party APIs.
+**Not a replacement for:** Your own authentication — OAuth is authorization delegation, not identity. Add OpenID Connect (OIDC) on top for identity.
+
+## Common Pitfalls
+
+- **Storing JWTs in localStorage** — Vulnerable to XSS. Use httpOnly cookies for browser apps
+- **No token expiration** — Always set short-lived access tokens (15-60 min) with refresh tokens for renewal
+- **Secrets in client code** — API keys and secrets must never appear in frontend code or mobile app bundles
+- **Rolling your own crypto** — Use established libraries for JWT signing, password hashing (bcrypt/argon2), and OAuth flows
+
+## Related Concepts
+
+- **Authorization** — Authentication is "who are you?", authorization is "what can you do?"
+- **Rate Limiting** — Pair with auth to enforce per-user limits
+- **CORS** — Cross-origin security for browser-based API access

@@ -1,0 +1,112 @@
+---
+title: "WebSockets"
+slug: "websockets"
+date: "2026-02-06"
+category: "Networking"
+difficulty: "Intermediate"
+tags: ["networking", "real-time", "api-design", "performance"]
+description: "How WebSockets enable persistent, bidirectional communication between client and server"
+---
+
+## Overview
+
+HTTP is request-response: the client asks, the server answers, the connection is done. WebSockets upgrade an HTTP connection into a persistent, bidirectional channel where both sides can send messages at any time.
+
+```
+HTTP:        Client ──request──▶ Server ──response──▶ Client  (done)
+
+WebSocket:   Client ◀──────── persistent channel ────────▶ Server
+             (either side can send messages at any time)
+```
+
+## The Handshake
+
+WebSocket connections start as HTTP, then upgrade:
+
+```
+Client:
+GET /chat HTTP/1.1
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+
+Server:
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+```
+
+After this, both sides communicate over the same TCP connection with minimal framing overhead.
+
+## Server Example
+
+```python
+# Python with websockets library
+import asyncio
+import websockets
+
+connected = set()
+
+async def handler(websocket):
+    connected.add(websocket)
+    try:
+        async for message in websocket:
+            # Broadcast to all connected clients
+            for ws in connected:
+                if ws != websocket:
+                    await ws.send(message)
+    finally:
+        connected.discard(websocket)
+
+asyncio.run(websockets.serve(handler, "localhost", 8765))
+```
+
+## When to Use WebSockets
+
+**Good fit:**
+- Chat applications
+- Live dashboards and feeds
+- Collaborative editing (Google Docs-style)
+- Gaming (real-time state sync)
+- Live notifications
+
+**Not needed:**
+- Data that updates every few minutes (use polling or SSE)
+- One-off API calls (use REST)
+- Server-to-client only updates (use Server-Sent Events — simpler)
+
+## WebSockets vs Alternatives
+
+| Approach | Direction | Complexity | Use Case |
+|----------|-----------|-----------|----------|
+| **Polling** | Client → Server | Low | Infrequent updates, simple clients |
+| **SSE** | Server → Client | Low | Live feeds, notifications |
+| **WebSockets** | Bidirectional | Medium | Chat, gaming, collaboration |
+| **gRPC streaming** | Both | High | Service-to-service real-time |
+
+## Scaling WebSockets
+
+WebSockets hold persistent connections, which makes scaling harder than stateless HTTP.
+
+- **Sticky sessions** — A client must stay connected to the same server. Use load balancer session affinity.
+- **Pub/sub for broadcasting** — With multiple servers, use Redis Pub/Sub or similar to broadcast messages across all instances.
+
+```
+Client A ──ws──▶ [Server 1] ──publish──▶ [Redis] ──subscribe──▶ [Server 2] ──ws──▶ Client B
+```
+
+- **Connection limits** — Each connection uses a file descriptor and memory. A single server can handle ~50k-100k connections with tuning.
+
+## Common Pitfalls
+
+- **No reconnection logic** — Connections drop (network blips, deploys). Clients must implement automatic reconnect with backoff
+- **No heartbeat** — Without ping/pong frames, dead connections aren't detected. Stale connections waste server resources
+- **Sending too much data** — WebSockets make it easy to push every change. Batch or throttle updates to avoid overwhelming clients
+- **Forgetting about proxies** — Some corporate proxies kill long-lived connections. Use ping frames to keep the connection alive
+
+## Related Concepts
+
+- **Load Balancing** — Sticky sessions required for WebSocket scaling
+- **Message Queues** — Pub/sub layer for multi-server WebSocket broadcasting
+- **Event-Driven Architecture** — WebSockets are the client-facing edge of event-driven systems

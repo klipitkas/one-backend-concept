@@ -1,0 +1,98 @@
+---
+title: "DNS & How It Works"
+slug: "dns"
+date: "2026-02-05"
+category: "Infrastructure"
+difficulty: "Beginner"
+tags: ["networking", "infrastructure", "dns", "fundamentals"]
+description: "How DNS translates domain names into IP addresses and why every backend engineer should understand it"
+---
+
+## Overview
+
+DNS (Domain Name System) translates human-readable domain names like `api.example.com` into IP addresses like `93.184.216.34`. Every HTTP request your backend serves starts with a DNS lookup.
+
+## The Resolution Process
+
+When a client visits `api.example.com`:
+
+```
+1. Browser cache → "Do I already know this?"
+2. OS resolver cache → "Has the OS resolved this recently?"
+3. Recursive resolver (ISP/8.8.8.8) → "Let me find out"
+4. Root nameserver → "I don't know, but .com is handled by these servers"
+5. TLD nameserver (.com) → "example.com is handled by these nameservers"
+6. Authoritative nameserver → "api.example.com = 93.184.216.34"
+```
+
+The result is cached at each level based on the TTL (time-to-live) value.
+
+## Record Types
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| **A** | Maps domain to IPv4 address | `api.example.com → 93.184.216.34` |
+| **AAAA** | Maps domain to IPv6 address | `api.example.com → 2606:2800:220:1:...` |
+| **CNAME** | Alias to another domain | `www.example.com → example.com` |
+| **MX** | Mail server for the domain | `example.com → mail.example.com` |
+| **TXT** | Arbitrary text (SPF, DKIM, verification) | `example.com → "v=spf1 include:..."` |
+| **NS** | Nameservers for the domain | `example.com → ns1.provider.com` |
+
+## TTL (Time to Live)
+
+TTL controls how long resolvers cache a record, in seconds.
+
+- **Low TTL (60-300s)** — Changes propagate quickly. Good before migrations or failovers. More DNS queries.
+- **High TTL (3600-86400s)** — Fewer DNS queries, faster resolution. Changes take hours to propagate.
+
+```
+; Low TTL for a service you might need to fail over quickly
+api.example.com.  300  IN  A  93.184.216.34
+
+; High TTL for a record that rarely changes
+images.example.com.  86400  IN  CNAME  cdn.provider.com.
+```
+
+## DNS for Backend Engineers
+
+### Blue-Green Deployments
+
+Switch traffic between environments by updating the DNS record.
+
+```
+Before: api.example.com → 10.0.1.100 (blue)
+After:  api.example.com → 10.0.2.100 (green)
+```
+
+With a 300s TTL, the switch completes within 5 minutes.
+
+### Geographic Routing
+
+Route users to the nearest server using DNS-based load balancing (Route 53, Cloudflare).
+
+```
+US user  → api.example.com → 10.0.1.100 (us-east)
+EU user  → api.example.com → 10.0.2.100 (eu-west)
+```
+
+### Service Discovery
+
+Internal services can use DNS to find each other instead of hardcoding IPs.
+
+```
+database.internal → 10.0.5.20
+cache.internal    → 10.0.5.21
+```
+
+## Common Pitfalls
+
+- **High TTL before migration** — Lower the TTL days before you plan to change a record. Resolvers won't re-check until the old TTL expires
+- **CNAME at zone apex** — You can't set a CNAME on the root domain (`example.com`). Use an ALIAS/ANAME record or an A record instead
+- **Forgetting about negative caching** — If someone looks up a record that doesn't exist, that "not found" response is also cached. Fix the record, and they still see nothing until the negative TTL expires
+- **Not monitoring DNS** — DNS failures are invisible and devastating. Monitor resolution from multiple locations
+
+## Related Concepts
+
+- **Load Balancing** — DNS is the first layer of load distribution
+- **CDN** — CDNs use DNS to route users to the nearest edge
+- **Reverse Proxies** — Handle routing after DNS resolves to your server

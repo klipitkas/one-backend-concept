@@ -1,0 +1,87 @@
+---
+title: "Message Queues"
+slug: "message-queues"
+date: "2026-01-25"
+category: "Infrastructure"
+difficulty: "Intermediate"
+tags: ["distributed-systems", "async", "scalability", "decoupling"]
+description: "How message queues decouple services and enable reliable asynchronous processing"
+---
+
+## Overview
+
+A message queue is a buffer that sits between a producer (sender) and a consumer (processor). Instead of services calling each other directly, the producer pushes a message onto the queue and moves on. A consumer picks it up later and processes it.
+
+This decoupling is fundamental to building resilient, scalable backend systems.
+
+```
+Producer → [ Queue: msg3, msg2, msg1 ] → Consumer
+```
+
+## Why Use a Queue
+
+- **Decouple services** — Producer doesn't need to know who processes the message or whether they're online
+- **Absorb traffic spikes** — Queue buffers work during bursts; consumers process at their own pace
+- **Retry failures** — Failed messages can be retried or moved to a dead-letter queue for inspection
+- **Scale independently** — Add more consumers when the queue grows, remove them when it's empty
+
+## Core Patterns
+
+### Point-to-Point
+
+One message is consumed by exactly one consumer. Good for task distribution.
+
+```python
+# Producer
+channel.queue_declare(queue="tasks")
+channel.basic_publish(exchange="", routing_key="tasks", body="resize_image:42")
+
+# Consumer
+def callback(ch, method, properties, body):
+    process_task(body)
+    ch.basic_ack(delivery_tag=method.delivery_tag)
+
+channel.basic_consume(queue="tasks", on_message_callback=callback)
+```
+
+### Pub/Sub (Fan-Out)
+
+One message is delivered to all subscribers. Good for event broadcasting.
+
+```python
+# Publisher
+channel.exchange_declare(exchange="events", exchange_type="fanout")
+channel.basic_publish(exchange="events", routing_key="", body="user_signed_up:42")
+
+# Each subscriber gets its own queue bound to the exchange
+```
+
+### Dead-Letter Queue
+
+Messages that fail processing repeatedly get routed to a separate queue for debugging.
+
+```
+Main Queue → Consumer (fails 3x) → Dead-Letter Queue → Manual review
+```
+
+## Choosing a Message Broker
+
+| Broker | Best For |
+|--------|----------|
+| **RabbitMQ** | Complex routing, task queues, when you need message acknowledgment |
+| **Kafka** | High-throughput event streaming, log aggregation, when you need replay |
+| **SQS** | Simple cloud-native queues on AWS, minimal ops overhead |
+| **Redis Streams** | Lightweight queuing when you already run Redis |
+
+## Common Pitfalls
+
+- **No idempotency** — Messages can be delivered more than once. Consumers must handle duplicates safely (e.g., use a unique message ID to deduplicate)
+- **Unbounded queues** — Without monitoring, queues grow silently until they exhaust memory or disk. Set alerts on queue depth
+- **Losing messages** — Use durable queues and publisher confirms. Don't acknowledge a message before processing completes
+- **Over-engineering** — Not every HTTP call needs a queue. Use them when you genuinely need async processing or decoupling
+
+## Related Concepts
+
+- **Event-Driven Architecture** — Building systems around event streams
+- **CQRS** — Separating reads and writes, often paired with queues
+- **Saga Pattern** — Coordinating distributed transactions via messages

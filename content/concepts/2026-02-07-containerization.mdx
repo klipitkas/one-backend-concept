@@ -1,0 +1,119 @@
+---
+title: "Containerization"
+slug: "containerization"
+date: "2026-02-07"
+category: "Infrastructure"
+difficulty: "Beginner"
+tags: ["docker", "infrastructure", "devops", "deployment"]
+description: "How containers package your application with its dependencies so it runs the same everywhere"
+---
+
+## Overview
+
+A container packages your application code, runtime, libraries, and system dependencies into a single, portable unit. It runs the same on your laptop, in CI, and in production. No more "works on my machine."
+
+Containers are not VMs. A VM virtualizes hardware and runs a full OS. A container shares the host OS kernel and only isolates the application's filesystem and processes. This makes containers much lighter and faster to start.
+
+```
+VM:         [App + Libs + Guest OS] on [Hypervisor] on [Host OS]
+Container:  [App + Libs] on [Container Runtime] on [Host OS]
+```
+
+## Dockerfile Basics
+
+A Dockerfile defines how to build a container image.
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --production
+COPY . .
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+
+```bash
+docker build -t my-api .
+docker run -p 3000:3000 my-api
+```
+
+## Key Concepts
+
+### Images vs Containers
+
+An **image** is a read-only template (like a class). A **container** is a running instance of an image (like an object). You can run many containers from the same image.
+
+### Layers
+
+Each Dockerfile instruction creates a layer. Layers are cached — if `package.json` hasn't changed, `npm ci` doesn't re-run. Order instructions from least to most frequently changing.
+
+```dockerfile
+# Good: dependencies change less often than source code
+COPY package*.json ./
+RUN npm ci
+COPY . .
+
+# Bad: any source code change invalidates the npm ci cache
+COPY . .
+RUN npm ci
+```
+
+### Multi-Stage Builds
+
+Keep final images small by separating build and runtime.
+
+```dockerfile
+# Build stage
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN npm ci && npm run build
+
+# Runtime stage
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+CMD ["node", "dist/server.js"]
+```
+
+## Docker Compose for Local Dev
+
+Run your full stack locally with one command.
+
+```yaml
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgres://user:pass@db:5432/app
+    depends_on:
+      - db
+      - redis
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_PASSWORD=pass
+  redis:
+    image: redis:7-alpine
+```
+
+```bash
+docker compose up
+```
+
+## Common Pitfalls
+
+- **Running as root** — Containers run as root by default. Add `USER node` (or a non-root user) in your Dockerfile
+- **Fat images** — Use alpine base images and multi-stage builds. A Node.js image can be 1GB or 100MB depending on your choices
+- **Storing data in containers** — Containers are ephemeral. Use volumes or external storage for anything that must persist
+- **Ignoring .dockerignore** — Without it, `node_modules`, `.git`, and other large directories get copied into the build context, slowing builds dramatically
+
+## Related Concepts
+
+- **Container Orchestration (Kubernetes)** — Managing containers at scale across multiple machines
+- **Reverse Proxies** — Route traffic to containers
+- **Horizontal Scaling** — Containers make it trivial to scale out — just run more instances

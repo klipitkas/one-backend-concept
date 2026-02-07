@@ -29,29 +29,29 @@
    ============================================ */
 
 :root {
-  /* Softer dark backgrounds with warm undertones */
-  --color-background: #1a1d23;
-  --color-surface: #22262e;
-  --color-elevated: #282d36;
-  --color-border: #363c47;
+  /* Deep charcoal backgrounds - rich but not pure black */
+  --color-background: #0f1115;
+  --color-surface: #181b21;
+  --color-elevated: #1f232b;
+  --color-border: #2a303c;
 
-  /* Softer text - less harsh white, warmer tones */
-  --color-foreground: #c9d1d9;
-  --color-muted: #8b929a;
-  --color-subtle: #545d68;
+  /* Text with good contrast - warm off-white */
+  --color-foreground: #e2e4e9;
+  --color-muted: #9298a5;
+  --color-subtle: #5c6370;
 
-  /* Muted aurora accents - less saturated for comfort */
-  --color-accent: #7eb8c4;
-  --color-accent-soft: rgba(126, 184, 196, 0.12);
-  --color-green: #98b386;
-  --color-purple: #a8849e;
-  --color-blue: #7a99b5;
-  --color-yellow: #d9be7e;
-  --color-red: #b35d64;
+  /* Refined accent colors */
+  --color-accent: #6db3c2;
+  --color-accent-soft: rgba(109, 179, 194, 0.15);
+  --color-green: #8fbf7f;
+  --color-purple: #b392ac;
+  --color-blue: #7ca3c9;
+  --color-yellow: #dbc07f;
+  --color-red: #c97373;
 
-  /* Code blocks - slightly elevated from background */
-  --color-pre-bg: #161920;
-  --color-pre-border: #2d333b;
+  /* Code blocks - deep background */
+  --color-pre-bg: #0a0c0f;
+  --color-pre-border: #232830;
 
   /* Gradients - subtle */
   --gradient-surface: linear-gradient(
@@ -61,32 +61,34 @@
   );
   --gradient-glow: radial-gradient(
     ellipse 80% 50% at 50% -20%,
-    rgba(126, 184, 196, 0.06),
+    rgba(109, 179, 194, 0.08),
     transparent
   );
 }
 
-/* Light theme - Warm cream tones */
+/* Light theme - Warm paper tones */
 :root.light {
-  --color-background: #f8f6f1;
-  --color-surface: #fdfcf9;
+  --color-background: #faf9f6;
+  --color-surface: #ffffff;
   --color-elevated: #ffffff;
-  --color-border: #e4e0d8;
+  --color-border: #e5e3de;
 
-  --color-foreground: #3d3d3d;
-  --color-muted: #6b6b6b;
-  --color-subtle: #9a9a9a;
+  /* Rich dark text for good readability */
+  --color-foreground: #2c2e33;
+  --color-muted: #6b7280;
+  --color-subtle: #a1a7b3;
 
-  --color-accent: #4a8f9c;
-  --color-accent-soft: rgba(74, 143, 156, 0.1);
-  --color-green: #5a8a5a;
-  --color-purple: #7a6a8a;
-  --color-blue: #5a7a9a;
-  --color-yellow: #9a8a5a;
-  --color-red: #9a5a5a;
+  /* Deeper, richer accent colors for light mode */
+  --color-accent: #2d7a8a;
+  --color-accent-soft: rgba(45, 122, 138, 0.1);
+  --color-green: #3d7a4a;
+  --color-purple: #6b5678;
+  --color-blue: #456b8a;
+  --color-yellow: #8a7a3d;
+  --color-red: #8a4a4a;
 
-  --color-pre-bg: #f3f1eb;
-  --color-pre-border: #e4e0d8;
+  --color-pre-bg: #f5f4f0;
+  --color-pre-border: #e5e3de;
 
   --gradient-surface: linear-gradient(
     180deg,
@@ -95,7 +97,7 @@
   );
   --gradient-glow: radial-gradient(
     ellipse 80% 50% at 50% -20%,
-    rgba(74, 143, 156, 0.05),
+    rgba(45, 122, 138, 0.06),
     transparent
   );
 }
@@ -218,7 +220,7 @@ pre::-webkit-scrollbar-thumb {
   --tw-prose-quote-borders: var(--color-accent);
   --tw-prose-captions: var(--color-muted);
   --tw-prose-code: var(--color-accent);
-  --tw-prose-pre-code: #b0b8c2;
+  --tw-prose-pre-code: #c5cad3;
   --tw-prose-pre-bg: var(--color-pre-bg);
   --tw-prose-th-borders: var(--color-border);
   --tw-prose-td-borders: var(--color-border);
@@ -388,7 +390,7 @@ pre::-webkit-scrollbar-thumb {
   line-height: 1.7;
   margin-top: 1.5em;
   margin-bottom: 1.5em;
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   padding: 1.25rem 1.5rem;
   border: 1px solid var(--color-pre-border);
 }
@@ -406,10 +408,66 @@ pre::-webkit-scrollbar-thumb {
   --tw-prose-quote-borders: var(--color-accent);
   --tw-prose-captions: var(--color-muted);
   --tw-prose-code: var(--color-accent);
-  --tw-prose-pre-code: #b0b8c2;
+  --tw-prose-pre-code: #c5cad3;
   --tw-prose-pre-bg: var(--color-pre-bg);
   --tw-prose-th-borders: var(--color-border);
   --tw-prose-td-borders: var(--color-border);
+}
+
+/* ============================================
+   TABLES
+   ============================================ */
+
+.prose :where(table):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  width: 100%;
+  table-layout: auto;
+  text-align: left;
+  margin-top: 2em;
+  margin-bottom: 2em;
+  font-size: 0.875em;
+  line-height: 1.7;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.prose :where(thead):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  background-color: var(--color-surface);
+}
+
+.prose :where(thead th):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  color: var(--color-foreground);
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.prose :where(thead th:last-child):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  border-right: none;
+}
+
+.prose :where(tbody tr):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.prose :where(tbody tr:last-child):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  border-bottom: none;
+}
+
+.prose :where(tbody tr:nth-child(even)):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  background-color: var(--color-surface);
+}
+
+.prose :where(tbody td):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  padding: 0.75rem 1rem;
+  border-right: 1px solid var(--color-border);
+}
+
+.prose :where(tbody td:last-child):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  border-right: none;
 }
 
 /* ============================================
@@ -430,7 +488,7 @@ pre::-webkit-scrollbar-thumb {
   position: relative;
   background-color: var(--color-pre-bg);
   border: 1px solid var(--color-pre-border);
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   overflow: hidden;
 }
 
@@ -460,24 +518,23 @@ pre::-webkit-scrollbar-thumb {
 }
 
 /* ============================================
-   SOFT NORD SYNTAX HIGHLIGHTING
-   Muted colors for comfortable reading
+   SYNTAX HIGHLIGHTING - Dark theme
    ============================================ */
 
 .token.comment,
 .token.prolog,
 .token.doctype,
 .token.cdata {
-  color: #5c6370;
+  color: #636e7b;
   font-style: italic;
 }
 
 .token.punctuation {
-  color: #7f8590;
+  color: #8b95a5;
 }
 
 .token.namespace {
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .token.property,
@@ -487,7 +544,7 @@ pre::-webkit-scrollbar-thumb {
 .token.constant,
 .token.symbol,
 .token.deleted {
-  color: #a8849e;
+  color: #b392ac;
 }
 
 .token.selector,
@@ -496,7 +553,7 @@ pre::-webkit-scrollbar-thumb {
 .token.char,
 .token.builtin,
 .token.inserted {
-  color: #98b386;
+  color: #8fbf7f;
 }
 
 .token.operator,
@@ -504,24 +561,24 @@ pre::-webkit-scrollbar-thumb {
 .token.url,
 .language-css .token.string,
 .style .token.string {
-  color: #7a99b5;
+  color: #7ca3c9;
 }
 
 .token.atrule,
 .token.attr-value,
 .token.keyword {
-  color: #7a99b5;
+  color: #7ca3c9;
 }
 
 .token.function,
 .token.class-name {
-  color: #7eb8c4;
+  color: #6db3c2;
 }
 
 .token.regex,
 .token.important,
 .token.variable {
-  color: #d9be7e;
+  color: #dbc07f;
 }
 
 .token.important,
@@ -535,6 +592,65 @@ pre::-webkit-scrollbar-thumb {
 
 .token.entity {
   cursor: help;
+}
+
+/* ============================================
+   SYNTAX HIGHLIGHTING - Light theme overrides
+   ============================================ */
+
+:root.light .token.comment,
+:root.light .token.prolog,
+:root.light .token.doctype,
+:root.light .token.cdata {
+  color: #8b95a0;
+}
+
+:root.light .token.punctuation {
+  color: #5c6370;
+}
+
+:root.light .token.property,
+:root.light .token.tag,
+:root.light .token.boolean,
+:root.light .token.number,
+:root.light .token.constant,
+:root.light .token.symbol,
+:root.light .token.deleted {
+  color: #7a5a6e;
+}
+
+:root.light .token.selector,
+:root.light .token.attr-name,
+:root.light .token.string,
+:root.light .token.char,
+:root.light .token.builtin,
+:root.light .token.inserted {
+  color: #3d7a4a;
+}
+
+:root.light .token.operator,
+:root.light .token.entity,
+:root.light .token.url,
+:root.light .language-css .token.string,
+:root.light .style .token.string {
+  color: #456b8a;
+}
+
+:root.light .token.atrule,
+:root.light .token.attr-value,
+:root.light .token.keyword {
+  color: #456b8a;
+}
+
+:root.light .token.function,
+:root.light .token.class-name {
+  color: #2d7a8a;
+}
+
+:root.light .token.regex,
+:root.light .token.important,
+:root.light .token.variable {
+  color: #8a7a3d;
 }
 
 /* ============================================
@@ -656,4 +772,149 @@ a {
 }
 .delay-4 {
   animation-delay: 0.4s;
+}
+
+/* ============================================
+   KIT.COM FORM OVERRIDES
+   ============================================ */
+
+.formkit-form {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  max-width: none !important;
+}
+
+.formkit-form[data-format="inline"] {
+  width: 100% !important;
+}
+
+.formkit-fields {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.formkit-field {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.formkit-input {
+  background-color: var(--color-background) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 0.5rem !important;
+  color: var(--color-foreground) !important;
+  font-family: inherit !important;
+  font-size: 1rem !important;
+  padding: 0.75rem 1rem !important;
+  transition: border-color 0.15s ease !important;
+}
+
+.formkit-input::placeholder {
+  color: var(--color-muted) !important;
+  opacity: 1 !important;
+}
+
+.formkit-input:focus {
+  border-color: var(--color-accent) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 1px var(--color-accent) !important;
+}
+
+.formkit-submit {
+  background-color: var(--color-accent) !important;
+  border: none !important;
+  border-radius: 0.5rem !important;
+  color: white !important;
+  font-family: inherit !important;
+  font-size: 1rem !important;
+  font-weight: 500 !important;
+  padding: 0.75rem 1.5rem !important;
+  transition: background-color 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.formkit-submit:hover {
+  background-color: var(--color-accent) !important;
+  opacity: 0.9 !important;
+}
+
+.formkit-submit span {
+  padding: 0 !important;
+}
+
+.formkit-spinner {
+  display: none !important;
+}
+
+.formkit-submit[data-active] .formkit-spinner {
+  display: flex !important;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.formkit-submit[data-active] .formkit-spinner > div {
+  width: 6px;
+  height: 6px;
+  background-color: white;
+  border-radius: 50%;
+  animation: formkit-bounce 1.4s infinite ease-in-out both;
+}
+
+.formkit-submit[data-active] .formkit-spinner > div:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.formkit-submit[data-active] .formkit-spinner > div:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes formkit-bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+.formkit-alert {
+  list-style: none !important;
+  padding: 0 !important;
+  margin: 0 0 1rem 0 !important;
+}
+
+.formkit-alert:empty {
+  display: none !important;
+}
+
+.formkit-alert-error {
+  background-color: var(--color-red) !important;
+  background-opacity: 0.1 !important;
+  border: 1px solid var(--color-red) !important;
+  border-radius: 0.5rem !important;
+  color: var(--color-red) !important;
+  padding: 0.75rem 1rem !important;
+}
+
+.formkit-alert-success {
+  background-color: rgba(143, 191, 127, 0.1) !important;
+  border: 1px solid var(--color-green) !important;
+  border-radius: 0.5rem !important;
+  color: var(--color-green) !important;
+  padding: 0.75rem 1rem !important;
+}
+
+.formkit-powered-by-convertkit-container,
+.formkit-powered-by-convertkit,
+.formkit-guarantee {
+  display: none !important;
 }

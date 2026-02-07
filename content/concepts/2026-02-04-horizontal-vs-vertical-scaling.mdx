@@ -1,0 +1,102 @@
+---
+title: "Horizontal vs Vertical Scaling"
+slug: "horizontal-vs-vertical-scaling"
+date: "2026-02-04"
+category: "Infrastructure"
+difficulty: "Beginner"
+tags: ["scalability", "infrastructure", "architecture", "performance"]
+description: "The two fundamental approaches to handling more load: bigger machines or more machines"
+---
+
+## Overview
+
+When your application needs to handle more traffic, you have two options:
+
+- **Vertical scaling (scale up)** — Use a bigger machine. More CPU, more RAM, faster disks.
+- **Horizontal scaling (scale out)** — Use more machines. Distribute the load across them.
+
+```
+Vertical:     [Small Server] → [Big Server] → [Huge Server]
+
+Horizontal:   [Server] → [Server] [Server] → [Server] [Server] [Server]
+```
+
+## Vertical Scaling
+
+Upgrade the hardware of a single machine.
+
+**Pros:**
+- Simple — no code changes, no distributed systems complexity
+- No data synchronization issues
+- Works for any application, even those not designed for distribution
+
+**Cons:**
+- Hard ceiling — there's a largest machine you can buy
+- Expensive — costs scale superlinearly (a 2x bigger server costs more than 2x)
+- Single point of failure — one machine goes down, everything goes down
+- Downtime during upgrades
+
+## Horizontal Scaling
+
+Add more machines and distribute work across them.
+
+**Pros:**
+- Near-infinite scale — just keep adding machines
+- Better fault tolerance — one machine failing doesn't take everything down
+- Cost-efficient — many commodity machines are cheaper than one giant machine
+- No downtime for scaling — add/remove machines dynamically
+
+**Cons:**
+- Application must be designed for it (stateless, shared-nothing)
+- Distributed systems complexity (consistency, networking, coordination)
+- Need load balancing, service discovery, and orchestration
+
+## What Needs to Change for Horizontal Scaling
+
+### Sessions
+
+Can't store sessions in local memory — they'd be lost when the load balancer routes to a different server.
+
+```
+Before: session stored in server memory
+After:  session stored in Redis (shared across all servers)
+```
+
+### File Storage
+
+Can't write files to local disk — other servers can't access them.
+
+```
+Before: uploaded files saved to /var/uploads/
+After:  uploaded files saved to S3 or similar object storage
+```
+
+### Scheduled Jobs
+
+Can't run cron jobs on every server — they'd execute multiple times.
+
+```
+Before: cron job runs on the server
+After:  distributed lock or dedicated job runner (single execution)
+```
+
+## The Practical Approach
+
+1. **Start vertical** — Scale up until it gets expensive or you hit limits
+2. **Design for horizontal** — Keep your application stateless even while scaling vertically
+3. **Scale out when needed** — When vertical limits are reached, you're already prepared
+
+Most applications can handle significant traffic on a single well-provisioned server. Don't add distributed systems complexity until the traffic demands it.
+
+## Common Pitfalls
+
+- **Scaling before optimizing** — A slow database query doesn't get better by adding servers. Profile first
+- **Stateful servers** — In-memory caches, local file writes, and sticky sessions make horizontal scaling painful. Design stateless from the start
+- **Ignoring the database** — Your app servers scale horizontally, but the database is still one machine. Plan for read replicas and eventually sharding
+
+## Related Concepts
+
+- **Load Balancing** — Required for horizontal scaling
+- **Database Replication** — Horizontal scaling for reads
+- **Database Sharding** — Horizontal scaling for writes
+- **Caching Strategies** — Reduces load before you need to scale

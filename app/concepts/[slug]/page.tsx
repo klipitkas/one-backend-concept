@@ -98,6 +98,36 @@ async function renderContent(content: string): Promise<string> {
       continue;
     }
 
+    // Table
+    if (line.includes('|') && line.trim().startsWith('|')) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      if (tableLines.length >= 2) {
+        let tableHtml = '<table>';
+        const headerCells = tableLines[0].split('|').filter((c) => c.trim() !== '');
+        tableHtml += '<thead><tr>';
+        for (const cell of headerCells) {
+          tableHtml += `<th>${processInlineFormatting(cell.trim())}</th>`;
+        }
+        tableHtml += '</tr></thead><tbody>';
+        // Skip header and separator rows
+        for (let r = 2; r < tableLines.length; r++) {
+          const cells = tableLines[r].split('|').filter((c) => c.trim() !== '');
+          tableHtml += '<tr>';
+          for (const cell of cells) {
+            tableHtml += `<td>${processInlineFormatting(cell.trim())}</td>`;
+          }
+          tableHtml += '</tr>';
+        }
+        tableHtml += '</tbody></table>';
+        blocks.push(tableHtml);
+      }
+      continue;
+    }
+
     // Unordered list
     if (line.startsWith('- ')) {
       let listHtml = '<ul>';

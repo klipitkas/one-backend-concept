@@ -1,0 +1,89 @@
+---
+title: "Reverse Proxies"
+slug: "reverse-proxies"
+date: "2026-01-30"
+category: "Infrastructure"
+difficulty: "Beginner"
+tags: ["networking", "infrastructure", "security", "performance"]
+description: "How reverse proxies sit in front of your servers to handle SSL, routing, caching, and more"
+---
+
+## Overview
+
+A reverse proxy sits between clients and your backend servers. Clients talk to the proxy; the proxy forwards requests to the appropriate server. The client never communicates with your servers directly.
+
+```
+Client ──▶ [Reverse Proxy] ──▶ Backend Server A
+                           ──▶ Backend Server B
+```
+
+A regular (forward) proxy acts on behalf of the client. A reverse proxy acts on behalf of the server.
+
+## What It Does
+
+### SSL Termination
+
+Handle HTTPS at the proxy so your backend servers only deal with plain HTTP internally. One place to manage certificates.
+
+```nginx
+server {
+    listen 443 ssl;
+    ssl_certificate     /etc/ssl/cert.pem;
+    ssl_certificate_key /etc/ssl/key.pem;
+
+    location / {
+        proxy_pass http://backend:8080;  # Plain HTTP internally
+    }
+}
+```
+
+### Request Routing
+
+Route different URL paths to different services.
+
+```nginx
+location /api/ {
+    proxy_pass http://api-service:3000;
+}
+location /static/ {
+    proxy_pass http://cdn-origin:8080;
+}
+location / {
+    proxy_pass http://frontend:3000;
+}
+```
+
+### Response Caching
+
+Cache responses from your backend so repeated requests don't hit your servers.
+
+### Compression
+
+Compress responses (gzip/brotli) at the proxy level so individual services don't have to.
+
+### Rate Limiting & Security
+
+Block malicious traffic, enforce rate limits, and add security headers before requests reach your application.
+
+## Common Reverse Proxies
+
+| Tool | Notes |
+|------|-------|
+| **NGINX** | The most widely used. Fast, stable, battle-tested |
+| **Caddy** | Automatic HTTPS, simple config, good for smaller setups |
+| **HAProxy** | Excellent for pure load balancing and high-throughput TCP proxying |
+| **Traefik** | Auto-discovers services in Docker/Kubernetes environments |
+| **Envoy** | Built for service mesh architectures, advanced observability |
+
+## Common Pitfalls
+
+- **Not forwarding client IP** — Without `X-Forwarded-For`, your backend sees the proxy's IP for every request. Always set `proxy_set_header X-Real-IP $remote_addr`
+- **Timeouts too short** — Long-running requests (file uploads, reports) get killed by default proxy timeouts. Tune `proxy_read_timeout` per endpoint
+- **Single point of failure** — Run at least two proxy instances behind a floating IP or cloud load balancer
+- **Buffering large uploads** — By default, proxies buffer the full request body. For large file uploads, enable streaming/pass-through
+
+## Related Concepts
+
+- **Load Balancing** — Reverse proxies often double as load balancers
+- **API Gateway** — A reverse proxy with API-specific features (auth, rate limiting, transformation)
+- **CDN** — A globally distributed reverse proxy cache

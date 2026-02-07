@@ -1,0 +1,99 @@
+---
+title: "REST vs GraphQL"
+slug: "rest-vs-graphql"
+date: "2026-02-03"
+category: "Architecture"
+difficulty: "Beginner"
+tags: ["api-design", "architecture", "networking", "graphql"]
+description: "Understanding the tradeoffs between REST and GraphQL for API design"
+---
+
+## Overview
+
+REST and GraphQL are two approaches to designing APIs. REST organizes your API around resources and HTTP methods. GraphQL gives clients a query language to request exactly the data they need.
+
+Neither is universally better — the right choice depends on your use case.
+
+## REST
+
+Resources are identified by URLs. HTTP methods define the operation.
+
+```
+GET    /api/users/42          → Fetch user
+POST   /api/users             → Create user
+PUT    /api/users/42          → Update user
+DELETE /api/users/42          → Delete user
+GET    /api/users/42/orders   → Fetch user's orders
+```
+
+**Strengths:**
+- Simple, well-understood, HTTP-native
+- Caching works out of the box (GET requests are cacheable)
+- Great tooling and ecosystem
+- Each endpoint is independently scalable
+
+**Weaknesses:**
+- Over-fetching — `/api/users/42` returns all fields even if you only need the name
+- Under-fetching — Need user + orders + reviews? That's 3 requests
+- Versioning can get messy (`/api/v1/users`, `/api/v2/users`)
+
+## GraphQL
+
+One endpoint. Clients specify exactly what they want.
+
+```graphql
+# Single request gets everything needed
+query {
+  user(id: 42) {
+    name
+    email
+    orders(last: 5) {
+      id
+      total
+      items {
+        name
+        quantity
+      }
+    }
+  }
+}
+```
+
+**Strengths:**
+- No over-fetching or under-fetching — client gets exactly what it asks for
+- One request for complex, nested data
+- Strongly typed schema acts as documentation
+- Great for mobile (minimize bandwidth)
+
+**Weaknesses:**
+- HTTP caching doesn't work (everything is POST to one endpoint)
+- Complex queries can be expensive — need query depth limiting
+- File uploads are awkward
+- Steeper learning curve for the backend team
+
+## When to Use What
+
+**Choose REST when:**
+- Your data model is simple and resource-oriented
+- Caching is critical (CDN-friendly)
+- Your clients are other backend services
+- Your team is already productive with REST
+
+**Choose GraphQL when:**
+- Multiple clients need different views of the same data (web, mobile, internal tools)
+- Your frontend makes many requests to assemble a single view
+- You want a strongly typed, self-documenting API
+- You're building a product with rapidly evolving frontend needs
+
+## Common Pitfalls
+
+- **GraphQL N+1 queries** — A nested query can trigger hundreds of database calls. Use DataLoader or similar batching
+- **No query limits on GraphQL** — Without depth/complexity limits, a malicious query like `{ user { friends { friends { friends... } } } }` can kill your server
+- **REST endpoint explosion** — Too many custom endpoints (`/users/42/orders/recent/with-items`) is a sign you might benefit from GraphQL
+- **Mixing both badly** — It's fine to use both (REST for simple CRUD, GraphQL for complex reads), but be deliberate about the boundary
+
+## Related Concepts
+
+- **API Authentication** — Both REST and GraphQL need it
+- **Rate Limiting** — Harder to implement for GraphQL (one request can do a lot of work)
+- **gRPC** — A third option for high-performance service-to-service communication

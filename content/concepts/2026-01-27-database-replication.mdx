@@ -1,0 +1,77 @@
+---
+title: "Database Replication"
+slug: "database-replication"
+date: "2026-01-27"
+category: "Databases"
+difficulty: "Intermediate"
+tags: ["databases", "scalability", "high-availability", "distributed-systems"]
+description: "How database replication keeps copies of your data across multiple servers for availability and read performance"
+---
+
+## Overview
+
+Database replication copies data from one database server (the primary) to one or more servers (replicas). This serves two purposes: if the primary goes down, a replica can take over, and read-heavy workloads can be spread across replicas.
+
+## Replication Topologies
+
+### Single-Leader (Primary-Replica)
+
+One server accepts writes. Replicas receive a copy and serve reads.
+
+```
+Writes ──▶ [Primary] ──replication──▶ [Replica 1] ◀── Reads
+                      ──replication──▶ [Replica 2] ◀── Reads
+```
+
+This is the most common setup. Simple to reason about since there's only one source of truth for writes.
+
+### Multi-Leader
+
+Multiple servers accept writes and replicate to each other. Useful for multi-region setups where you want low write latency everywhere.
+
+```
+[Leader A] ◀──replication──▶ [Leader B]
+  (US)                         (EU)
+```
+
+The tradeoff: write conflicts. If two leaders update the same row simultaneously, you need a conflict resolution strategy (last-write-wins, merge, or application-level logic).
+
+### Leaderless
+
+Every node accepts reads and writes. The client writes to multiple nodes and reads from multiple nodes, using quorums to ensure consistency.
+
+```
+Client writes to 3 of 5 nodes (W=3)
+Client reads from 3 of 5 nodes (R=3)
+W + R > N guarantees overlap → at least one read hits an up-to-date node
+```
+
+Used by Cassandra and DynamoDB.
+
+## Sync vs Async Replication
+
+- **Synchronous** — Primary waits for replica to confirm the write. Guarantees no data loss but adds latency.
+- **Asynchronous** — Primary confirms the write immediately, replica catches up later. Fast but risks data loss if the primary crashes before replication completes.
+
+Most production setups use **semi-synchronous**: one replica is synchronous (guarantees at least one copy), the rest are asynchronous.
+
+## Replication Lag
+
+With async replication, replicas may be seconds behind. This causes:
+
+- **Read-after-write inconsistency** — User writes data, refreshes, reads from a stale replica, and thinks data was lost
+- **Monotonic read violations** — User sees newer data, then older data on the next request (different replica)
+
+Mitigations: route reads-after-writes to the primary, use sticky sessions, or track replication position.
+
+## Common Pitfalls
+
+- **Ignoring replication lag** — Test your app with artificial lag to find inconsistencies before production does
+- **No failover plan** — Automatic failover sounds great but can cause split-brain if the old primary comes back. Test your failover procedure
+- **Replicating everything** — Large tables with frequent writes create replication bottlenecks. Consider what actually needs replication
+
+## Related Concepts
+
+- **Database Sharding** — Splitting data across servers horizontally
+- **Consensus Algorithms** — Raft, Paxos for leader election
+- **CAP Theorem** — The tradeoffs between consistency, availability, and partition tolerance

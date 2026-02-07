@@ -1,0 +1,85 @@
+---
+title: "Event-Driven Architecture"
+slug: "event-driven-architecture"
+date: "2026-02-01"
+category: "Architecture"
+difficulty: "Intermediate"
+tags: ["architecture", "distributed-systems", "async", "decoupling"]
+description: "Building systems where services communicate through events instead of direct calls"
+---
+
+## Overview
+
+In event-driven architecture, services communicate by producing and consuming events rather than calling each other directly. When something happens (a user signs up, an order is placed), the service emits an event. Other services that care about that event react to it independently.
+
+```
+[Order Service] ──"order.placed"──▶ [Event Bus] ──▶ [Email Service]
+                                                ──▶ [Inventory Service]
+                                                ──▶ [Analytics Service]
+```
+
+The Order Service doesn't know or care who consumes the event. Each consumer can be added, removed, or fail independently.
+
+## Events vs Commands
+
+- **Event** — Something that happened. Past tense. `order.placed`, `user.signed_up`. The producer doesn't dictate what happens next.
+- **Command** — A request to do something. Imperative. `send_email`, `reserve_inventory`. Directed at a specific service.
+
+Events are better for decoupling. Commands are better when you need a specific action from a specific service.
+
+## Event Schemas
+
+Define a clear contract for your events.
+
+```json
+{
+  "event_type": "order.placed",
+  "event_id": "evt_abc123",
+  "timestamp": "2026-02-01T12:00:00Z",
+  "data": {
+    "order_id": "ord_456",
+    "user_id": "usr_789",
+    "total": 99.99,
+    "items": [{ "sku": "WIDGET-1", "qty": 2 }]
+  }
+}
+```
+
+Always include: event type, unique ID (for deduplication), timestamp, and the payload. Version your schemas when they change.
+
+## Delivery Patterns
+
+### At-Most-Once
+
+Fire and forget. Fast but events can be lost. Acceptable for analytics or logging.
+
+### At-Least-Once
+
+Retry until acknowledged. Events may be delivered multiple times, so consumers must be idempotent.
+
+```python
+def handle_order_placed(event):
+    # Idempotent: check if already processed
+    if db.exists(f"processed:{event['event_id']}"):
+        return
+    send_confirmation_email(event["data"]["user_id"])
+    db.set(f"processed:{event['event_id']}", True)
+```
+
+### Exactly-Once
+
+Extremely hard to achieve in distributed systems. Usually approximated with at-least-once delivery plus idempotent consumers.
+
+## Common Pitfalls
+
+- **Event storms** — One event triggers another, which triggers another, creating infinite loops. Track event lineage and set circuit breakers
+- **No schema evolution plan** — Adding a required field breaks all consumers. Use backward-compatible changes (add optional fields, don't remove or rename)
+- **Debugging is harder** — A request flows through multiple services asynchronously. Invest in distributed tracing (correlation IDs) from day one
+- **Eventual consistency confusion** — Users expect instant updates. Design your UI to handle the delay (optimistic updates, polling, websockets)
+
+## Related Concepts
+
+- **Message Queues** — The transport layer for events
+- **CQRS** — Separate read and write models, often event-driven
+- **Saga Pattern** — Managing distributed transactions through events
+- **Event Sourcing** — Storing state as a sequence of events
