@@ -26,7 +26,7 @@ export function Header() {
             About
           </Link>
           <a
-            href="https://github.com"
+            href="https://github.com/klipitkas/one-backend-concept"
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-md px-3 py-1.5 text-sm text-muted transition-colors hover:bg-surface hover:text-foreground"

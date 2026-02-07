@@ -1,0 +1,164 @@
+---
+title: "Distributed Tracing"
+slug: "2026-03-04-distributed-tracing"
+date: "2026-03-04"
+category: "Observability"
+difficulty: "Intermediate"
+tags: ["Distributed Tracing", "Observability", "Microservices", "OpenTelemetry"]
+description: "How to follow a request across multiple services using traces, spans, and context propagation"
+---
+
+## Overview
+
+In a monolith, a stack trace shows you everything. In microservices, a single user request might touch 5-10 services. Distributed tracing connects the dots -- it follows a request from the API gateway through every service it touches, showing you exactly where time is spent and where failures happen.
+
+## Core Concepts
+
+A **trace** represents a complete request through the system. It's made up of **spans**, where each span represents a unit of work (an HTTP call, a database query, a queue message).
+
+```
+Trace: "POST /api/orders" (total: 450ms)
+│
+├── Span: API Gateway (12ms)
+│   └── Span: Auth Service - validate token (8ms)
+│
+├── Span: Order Service - create order (180ms)
+│   ├── Span: PostgreSQL - INSERT orders (15ms)
+│   └── Span: Inventory Service - reserve stock (120ms)
+│       └── Span: Redis - DECR stock:product-42 (2ms)
+│
+└── Span: Payment Service - charge card (250ms)
+    ├── Span: Stripe API - create charge (200ms)
+    └── Span: PostgreSQL - INSERT payments (12ms)
+```
+
+## OpenTelemetry Setup
+
+OpenTelemetry (OTel) is the industry standard for distributed tracing.
+
+```python
+# Install: pip install opentelemetry-api opentelemetry-sdk opentelemetry-instrumentation-flask
+
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+# Configure the tracer
+provider = TracerProvider()
+processor = BatchSpanProcessor(OTLPSpanExporter(endpoint="http://otel-collector:4317"))
+provider.add_span_processor(processor)
+trace.set_tracer_provider(provider)
+
+# Auto-instrument Flask and outgoing HTTP requests
+FlaskInstrumentor().instrument_app(app)
+RequestsInstrumentor().instrument()
+```
+
+## Creating Custom Spans
+
+```python
+tracer = trace.get_tracer(__name__)
+
+@app.route("/api/orders", methods=["POST"])
+def create_order():
+    with tracer.start_as_current_span("create_order") as span:
+        span.set_attribute("user.id", request.json["user_id"])
+
+        # Each significant operation gets its own span
+        with tracer.start_as_current_span("validate_order"):
+            validate_order(request.json)
+
+        with tracer.start_as_current_span("save_to_database"):
+            order = save_order(request.json)
+            span.set_attribute("order.id", order.id)
+
+        with tracer.start_as_current_span("reserve_inventory"):
+            reserve_stock(order.items)
+
+        with tracer.start_as_current_span("process_payment"):
+            charge_customer(order)
+
+        return jsonify({"order_id": order.id}), 201
+```
+
+## Context Propagation
+
+The trace context must be passed between services so spans connect into a single trace.
+
+```python
+# Service A: makes an HTTP call to Service B
+import requests
+
+def call_inventory_service(items):
+    # OpenTelemetry auto-injects trace headers (traceparent, tracestate)
+    response = requests.post("http://inventory-service/reserve", json={"items": items})
+    return response.json()
+
+# The outgoing request automatically includes:
+# traceparent: 00-<trace_id>-<span_id>-01
+```
+
+```python
+# Service B: Flask auto-extracts trace context from incoming headers
+# (handled by FlaskInstrumentor -- no manual code needed)
+
+@app.route("/reserve", methods=["POST"])
+def reserve_stock():
+    # This span is automatically a child of Service A's span
+    with tracer.start_as_current_span("check_availability"):
+        # ...
+        pass
+```
+
+For message queues, propagate context manually:
+
+```python
+from opentelemetry.context import get_current
+from opentelemetry.propagate import inject, extract
+
+# Producer: inject context into message headers
+def publish_event(event_data):
+    headers = {}
+    inject(headers)  # Adds traceparent header
+    queue.publish(message=event_data, headers=headers)
+
+# Consumer: extract context from message headers
+def process_message(message):
+    ctx = extract(message.headers)
+    with tracer.start_as_current_span("process_event", context=ctx):
+        handle_event(message.data)
+```
+
+## Recording Errors
+
+```python
+from opentelemetry.trace import StatusCode
+
+with tracer.start_as_current_span("process_payment") as span:
+    try:
+        result = payment_provider.charge(amount)
+        span.set_attribute("payment.status", "success")
+    except PaymentError as e:
+        span.set_status(StatusCode.ERROR, str(e))
+        span.record_exception(e)
+        raise
+```
+
+## Common Pitfalls
+
+- **Not propagating context** -- If you make HTTP calls without propagating trace headers, spans become disconnected orphans.
+- **Tracing everything** -- Tracing every trivial operation adds overhead. Focus on service boundaries, database calls, and external API calls.
+- **No sampling in production** -- Tracing 100% of requests in high-traffic systems generates enormous volumes. Use sampling (e.g., 10% of requests, or always trace errors).
+- **Ignoring async workflows** -- Message queue consumers need manual context extraction.
+
+## Best Practices
+
+- Use OpenTelemetry as your instrumentation standard
+- Auto-instrument frameworks and HTTP clients first
+- Add custom spans for significant business operations
+- Propagate context across all communication channels (HTTP, queues, gRPC)
+- Use head-based or tail-based sampling in production
+- Connect traces to logs using trace IDs for correlation

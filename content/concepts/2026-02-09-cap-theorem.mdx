@@ -1,0 +1,145 @@
+---
+title: "CAP Theorem"
+slug: "2026-02-09-cap-theorem"
+date: "2026-02-09"
+category: "Distributed Systems"
+difficulty: "Intermediate"
+tags: ["CAP Theorem", "Distributed Systems", "Consistency", "Availability"]
+description: "Understanding the fundamental trade-offs between consistency, availability, and partition tolerance in distributed systems"
+---
+
+## Overview
+
+The CAP theorem states that a distributed system can provide at most two of three guarantees simultaneously: **Consistency**, **Availability**, and **Partition tolerance**. Since network partitions are unavoidable in any distributed system, the real choice is between consistency and availability when a partition occurs.
+
+## The Three Guarantees
+
+**Consistency (C):** Every read receives the most recent write or an error. All nodes see the same data at the same time.
+
+**Availability (A):** Every request receives a non-error response, though it may not contain the most recent write.
+
+**Partition tolerance (P):** The system continues to operate despite network partitions between nodes.
+
+```
+        Consistency
+           /\
+          /  \
+         / CP \
+        /______\
+       /\      /\
+      /  \ ?? /  \
+     / AP \  / CA \
+    /______\/______\
+Availability   Partition Tolerance
+```
+
+## Why You Must Choose
+
+When a network partition happens (and it will), the system must decide:
+
+```
+Node A                    Node B
+  |                         |
+  |    Network Partition    |
+  |    ═══════╳═════════    |
+  |                         |
+  | Client writes X=5       | Client reads X
+  |                         |
+  | Option 1 (CP): Block    | Return error until
+  | the read until partition | partition heals
+  | heals — consistent but  |
+  | unavailable             |
+  |                         |
+  | Option 2 (AP): Let B    | Return stale X=3
+  | serve stale data —      | (eventually consistent)
+  | available but           |
+  | inconsistent            |
+```
+
+## Real-World Examples
+
+### CP Systems (Consistency + Partition Tolerance)
+
+These systems refuse to serve potentially stale data during a partition.
+
+```python
+# ZooKeeper, etcd, Consul — distributed coordination
+# During a partition, minority nodes reject writes
+
+# Example: distributed lock with etcd
+import etcd3
+
+client = etcd3.client()
+
+# This will fail if the node can't reach a quorum
+lock = client.lock("my-resource", ttl=30)
+lock.acquire()
+try:
+    # Critical section — guaranteed exclusive access
+    process_resource()
+finally:
+    lock.release()
+```
+
+**Use cases:** Leader election, distributed locks, configuration management, financial transactions.
+
+### AP Systems (Availability + Partition Tolerance)
+
+These systems always respond, even if the data might be stale.
+
+```python
+# Cassandra, DynamoDB, CouchDB — always available
+
+# Cassandra with tunable consistency
+from cassandra.cluster import Cluster
+from cassandra import ConsistencyLevel
+
+cluster = Cluster(["node1", "node2", "node3"])
+session = cluster.connect("myapp")
+
+# Fast but potentially stale
+session.default_consistency_level = ConsistencyLevel.ONE
+
+# Stronger consistency (majority of replicas must agree)
+from cassandra.query import SimpleStatement
+stmt = SimpleStatement(
+    "SELECT * FROM users WHERE id = %s",
+    consistency_level=ConsistencyLevel.QUORUM
+)
+```
+
+**Use cases:** Shopping carts, social media feeds, DNS, content delivery.
+
+## Tunable Consistency
+
+Many modern databases let you choose consistency per-operation rather than per-system.
+
+```python
+# DynamoDB: choose per-read
+import boto3
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("users")
+
+# Eventually consistent (fast, cheap)
+response = table.get_item(Key={"id": "user-123"})
+
+# Strongly consistent (slower, costs 2x)
+response = table.get_item(
+    Key={"id": "user-123"},
+    ConsistentRead=True
+)
+```
+
+## Common Pitfalls
+
+- **Treating CAP as a permanent, binary choice** -- Modern databases offer tunable consistency. You can choose per-query, not just per-system.
+- **Ignoring the "during a partition" qualifier** -- CAP only applies during network partitions. When the network is healthy, you can have all three.
+- **Assuming CA is practical** -- A system without partition tolerance only works on a single node, which is not a distributed system.
+- **Confusing consistency models** -- CAP's "consistency" means linearizability, not ACID consistency. They are different concepts.
+
+## Best Practices
+
+- **Choose based on business requirements** -- Financial data needs CP. Social media feeds can use AP.
+- **Use tunable consistency** -- Strong consistency for writes, eventual consistency for reads where staleness is acceptable.
+- **Design for partition recovery** -- Plan how conflicting writes during a partition are resolved (last-write-wins, vector clocks, CRDTs).
+- **Understand your system's actual guarantees** -- Read the database documentation carefully. Marketing claims and actual behavior often differ.

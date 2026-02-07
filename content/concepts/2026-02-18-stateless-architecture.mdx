@@ -1,0 +1,79 @@
+---
+title: "Stateless Architecture"
+slug: "2026-02-18-stateless-architecture"
+date: "2026-02-18"
+category: "Scalability"
+difficulty: "Intermediate"
+tags: ["Stateless", "Scalability", "Architecture", "Horizontal Scaling"]
+description: "Why stateless design is the foundation of scalable systems and how to externalize state effectively"
+---
+
+## Overview
+
+A stateless architecture means no individual server holds information about previous requests. Every request contains everything the server needs to process it. If a server dies, any other server can handle the next request seamlessly.
+
+## Stateful vs Stateless
+
+```python
+# ❌ Stateful: session in server memory
+sessions = {}
+
+@app.route("/add-to-cart", methods=["POST"])
+def add_to_cart():
+    session = sessions[request.headers["Session-Id"]]  # Only works on THIS server
+    session["cart"].append(request.json["item"])
+    return {"cart": session["cart"]}
+```
+
+```python
+# ✅ Stateless: session in external store
+import redis
+store = redis.Redis(host="session-store")
+
+@app.route("/add-to-cart", methods=["POST"])
+def add_to_cart():
+    session = json.loads(store.get(request.headers["Session-Id"]))
+    session["cart"].append(request.json["item"])
+    store.setex(request.headers["Session-Id"], 3600, json.dumps(session))
+    return {"cart": session["cart"]}
+```
+
+Any server can handle any request because state lives in Redis.
+
+## Why It Matters
+
+- **Horizontal scaling** -- Add or remove instances freely since none hold unique data
+- **Zero-downtime deployments** -- Roll instances without losing sessions
+- **Fault tolerance** -- A crashed server doesn't take user sessions with it
+
+## What to Externalize
+
+**Sessions** -- Redis, database, or JWTs (no server-side session at all)
+
+**File uploads** -- Object storage (S3), not local filesystem
+
+```python
+# ❌ Local filesystem (invisible to other servers)
+file.save(f"/tmp/uploads/{file.filename}")
+
+# ✅ Object storage
+s3.upload_fileobj(file, "my-bucket", f"uploads/{file.filename}")
+```
+
+**Caches** -- Redis/Memcached, not in-memory dictionaries
+
+**Background jobs** -- Job queue with external broker (Redis, RabbitMQ)
+
+## Common Pitfalls
+
+- **In-memory caches with user data** -- Use Redis, not Python dicts or Node.js Maps
+- **Sticky sessions as a crutch** -- They mask statefulness. When the server goes down, the session is lost.
+- **WebSocket state** -- Use Redis Pub/Sub to broadcast across servers
+- **Confusing stateless with no state** -- The system has state. The goal is to externalize it.
+
+## Best Practices
+
+- Externalize all session data from day one
+- Use environment variables and config services, not local config files
+- Design for server ephemerality -- assume any server can be killed at any moment
+- Verify with chaos testing -- randomly kill instances and check nothing breaks

@@ -1,0 +1,181 @@
+---
+title: "API Versioning"
+slug: "2026-03-02-api-versioning"
+date: "2026-03-02"
+category: "APIs"
+difficulty: "Intermediate"
+tags: ["API Versioning", "APIs", "REST", "Backward Compatibility"]
+description: "Strategies for evolving your API without breaking existing clients -- URL versioning, header versioning, and managing deprecation"
+---
+
+## Overview
+
+APIs evolve. Fields get renamed, endpoints change, response formats shift. API versioning lets you make these changes without breaking existing clients. The challenge is supporting old versions while moving forward with new ones.
+
+## Versioning Strategies
+
+### URL Path Versioning
+
+The version is part of the URL. The most common and most visible approach.
+
+```
+GET /api/v1/users/42
+GET /api/v2/users/42
+```
+
+```python
+# Flask example
+@app.route("/api/v1/users/<int:user_id>")
+def get_user_v1(user_id):
+    user = get_user(user_id)
+    return jsonify({
+        "id": user.id,
+        "name": user.name,         # v1: single name field
+    })
+
+@app.route("/api/v2/users/<int:user_id>")
+def get_user_v2(user_id):
+    user = get_user(user_id)
+    return jsonify({
+        "id": user.id,
+        "first_name": user.first_name,  # v2: split name into parts
+        "last_name": user.last_name,
+        "email": user.email,             # v2: new field
+    })
+```
+
+**Pros:** Obvious, easy to route, easy to test.
+**Cons:** URL changes for every version. Clients must update URLs.
+
+### Header Versioning
+
+The version is in a custom header. The URL stays the same.
+
+```
+GET /api/users/42
+Accept: application/vnd.myapi.v2+json
+```
+
+```python
+@app.route("/api/users/<int:user_id>")
+def get_user(user_id):
+    version = parse_version(request.headers.get("Accept", ""))
+    user = get_user_from_db(user_id)
+
+    if version == 2:
+        return jsonify({
+            "id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+        })
+
+    # Default to v1
+    return jsonify({
+        "id": user.id,
+        "name": user.name,
+    })
+```
+
+**Pros:** Clean URLs. Version is metadata, not a resource identifier.
+**Cons:** Less discoverable. Harder to test in a browser.
+
+### Query Parameter Versioning
+
+```
+GET /api/users/42?version=2
+```
+
+**Pros:** Simple to implement.
+**Cons:** Easy to forget. Mixes API version with query parameters.
+
+## Non-Breaking Changes (No Version Bump)
+
+Not every change needs a new version. These are safe:
+
+```python
+# ✅ Adding a new optional field (backward compatible)
+# Before: {"id": 1, "name": "Alice"}
+# After:  {"id": 1, "name": "Alice", "email": "alice@example.com"}
+
+# ✅ Adding a new endpoint
+# Before: GET /api/v1/users
+# After:  GET /api/v1/users, GET /api/v1/users/search
+
+# ✅ Adding an optional query parameter
+# Before: GET /api/v1/users
+# After:  GET /api/v1/users?role=admin
+```
+
+These require a new version:
+
+```python
+# ❌ Removing a field
+# ❌ Renaming a field (name → first_name)
+# ❌ Changing a field's type (id: number → id: string)
+# ❌ Changing the meaning of a field
+# ❌ Making an optional field required
+```
+
+## Deprecation Strategy
+
+```python
+@app.route("/api/v1/users/<int:user_id>")
+def get_user_v1(user_id):
+    # Add deprecation headers
+    response = jsonify(get_user_v1_format(user_id))
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "Sat, 01 Jun 2026 00:00:00 GMT"
+    response.headers["Link"] = '</api/v2/users/{}>; rel="successor-version"'.format(user_id)
+    return response
+```
+
+A typical deprecation timeline:
+
+```
+1. Announce deprecation (documentation, headers, changelog)
+2. Add deprecation headers to responses
+3. Monitor v1 usage -- contact remaining consumers
+4. Set a sunset date (give 6-12 months)
+5. Return 410 Gone after sunset
+```
+
+## Internal Code Organization
+
+Keep version-specific logic thin. Share business logic between versions.
+
+```python
+# Shared business logic
+def get_user_data(user_id):
+    return db.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
+
+# Version-specific serialization
+def serialize_user_v1(user):
+    return {"id": user.id, "name": f"{user.first_name} {user.last_name}"}
+
+def serialize_user_v2(user):
+    return {"id": user.id, "first_name": user.first_name, "last_name": user.last_name}
+
+@app.route("/api/v1/users/<int:user_id>")
+def get_user_v1(user_id):
+    return jsonify(serialize_user_v1(get_user_data(user_id)))
+
+@app.route("/api/v2/users/<int:user_id>")
+def get_user_v2(user_id):
+    return jsonify(serialize_user_v2(get_user_data(user_id)))
+```
+
+## Common Pitfalls
+
+- **Versioning too aggressively** -- Every minor change gets a new version, leaving you maintaining v1 through v12.
+- **Not versioning at all** -- Breaking changes surprise clients with no migration path.
+- **Duplicating business logic per version** -- Only the serialization layer should differ. Share the core logic.
+- **No sunset plan** -- Old versions accumulate forever, increasing maintenance burden.
+
+## Best Practices
+
+- Use URL path versioning (`/api/v1/`) for simplicity and clarity
+- Only bump versions for breaking changes
+- Add fields without bumping versions (additive changes are safe)
+- Set and communicate sunset dates for deprecated versions
+- Monitor usage of old versions to plan deprecation
+- Document all versions and migration guides

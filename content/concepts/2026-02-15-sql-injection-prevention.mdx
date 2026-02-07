@@ -1,0 +1,102 @@
+---
+title: "SQL Injection Prevention"
+slug: "2026-02-15-sql-injection-prevention"
+date: "2026-02-15"
+category: "Security"
+difficulty: "Beginner"
+tags: ["SQL Injection", "Security", "Databases", "OWASP"]
+description: "How SQL injection attacks work and the essential techniques to prevent them in your applications"
+---
+
+## Overview
+
+SQL injection occurs when user input is inserted directly into SQL queries without sanitization, allowing attackers to manipulate query logic. Despite being well-understood for decades, it remains in the OWASP Top 10 and continues to cause data breaches.
+
+## How It Works
+
+```python
+# VULNERABLE -- never do this
+def login(username, password):
+    query = f"SELECT * FROM users WHERE username = '{username}' AND password = '{password}'"
+    return db.execute(query).fetchone()
+```
+
+A normal login with `alice` / `secret123` produces:
+```sql
+SELECT * FROM users WHERE username = 'alice' AND password = 'secret123'
+```
+
+An attacker entering `' OR '1'='1' --` as the username produces:
+```sql
+SELECT * FROM users WHERE username = '' OR '1'='1' --' AND password = ''
+```
+
+The `--` comments out the password check, `'1'='1'` is always true, and the attacker is logged in.
+
+## Prevention: Parameterized Queries
+
+The primary defense. The database sees query structure and data separately.
+
+```python
+# Python (psycopg2)
+cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+
+# Python (SQLAlchemy)
+result = session.execute(text("SELECT * FROM users WHERE email = :email"), {"email": email})
+```
+
+```javascript
+// Node.js (pg)
+await client.query("SELECT * FROM users WHERE email = $1", [email]);
+```
+
+```go
+// Go (database/sql)
+rows, err := db.Query("SELECT * FROM users WHERE email = $1", email)
+```
+
+```java
+// Java (JDBC)
+PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE email = ?");
+stmt.setString(1, email);
+```
+
+## Allowlist Validation for Dynamic SQL
+
+Parameterized queries can't be used for table names, column names, or SQL keywords. Use allowlist validation instead.
+
+```python
+def validate_sort_column(column):
+    allowed = {"name", "email", "created_at"}
+    if column not in allowed:
+        raise ValueError(f"Invalid sort column: {column}")
+    return column
+
+sort_col = validate_sort_column(request.args["sort"])
+query = f"SELECT * FROM users ORDER BY {sort_col} ASC"
+```
+
+## Least Privilege
+
+Limit the database user's permissions:
+
+```sql
+CREATE USER app_user WITH PASSWORD 'strong_password';
+GRANT SELECT, INSERT, UPDATE ON users, orders TO app_user;
+-- Do NOT: GRANT ALL PRIVILEGES TO app_user;
+```
+
+## Common Pitfalls
+
+- **Relying on escaping instead of parameterization** -- Escaping is error-prone and varies by database
+- **Using an ORM but writing raw SQL with concatenation** -- ORMs parameterize standard queries, but raw SQL is still vulnerable
+- **Client-side-only validation** -- Trivially bypassed. All validation must happen server-side
+- **Exposing database error messages** -- Detailed SQL errors help attackers understand your schema
+
+## Best Practices
+
+- Use parameterized queries everywhere, non-negotiably
+- Use an ORM for standard CRUD operations
+- Apply allowlist validation for dynamic SQL elements
+- Follow least privilege for database accounts
+- Run static analysis tools (`semgrep`, `bandit`) in CI to catch string concatenation in queries

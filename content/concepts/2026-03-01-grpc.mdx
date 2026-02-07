@@ -1,0 +1,175 @@
+---
+title: "gRPC"
+slug: "2026-03-01-grpc"
+date: "2026-03-01"
+category: "APIs"
+difficulty: "Intermediate"
+tags: ["gRPC", "APIs", "Protocol Buffers", "Microservices"]
+description: "How gRPC enables high-performance service-to-service communication with strongly typed contracts and HTTP/2"
+---
+
+## Overview
+
+gRPC is a high-performance RPC (Remote Procedure Call) framework that uses Protocol Buffers for serialization and HTTP/2 for transport. While REST uses JSON over HTTP/1.1, gRPC uses a binary format that's smaller and faster to parse. It's the standard for service-to-service communication in microservice architectures.
+
+## Protocol Buffers (Protobuf)
+
+gRPC uses `.proto` files to define the service contract -- like a schema for your API.
+
+```protobuf
+// order_service.proto
+syntax = "proto3";
+
+package orders;
+
+service OrderService {
+  rpc CreateOrder (CreateOrderRequest) returns (CreateOrderResponse);
+  rpc GetOrder (GetOrderRequest) returns (Order);
+  rpc ListOrders (ListOrdersRequest) returns (ListOrdersResponse);
+  rpc StreamOrderUpdates (GetOrderRequest) returns (stream OrderUpdate);
+}
+
+message CreateOrderRequest {
+  string customer_id = 1;
+  repeated OrderItem items = 2;
+}
+
+message OrderItem {
+  string product_id = 1;
+  int32 quantity = 2;
+  int64 price_cents = 3;
+}
+
+message Order {
+  string id = 1;
+  string customer_id = 2;
+  repeated OrderItem items = 3;
+  string status = 4;
+  int64 total_cents = 5;
+}
+
+message CreateOrderResponse {
+  Order order = 1;
+}
+
+message GetOrderRequest {
+  string id = 1;
+}
+
+message ListOrdersRequest {
+  string customer_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListOrdersResponse {
+  repeated Order orders = 1;
+  string next_page_token = 2;
+}
+
+message OrderUpdate {
+  string order_id = 1;
+  string status = 2;
+  string timestamp = 3;
+}
+```
+
+## Server Implementation (Python)
+
+```python
+import grpc
+from concurrent import futures
+import order_service_pb2 as pb2
+import order_service_pb2_grpc as pb2_grpc
+
+class OrderService(pb2_grpc.OrderServiceServicer):
+    def CreateOrder(self, request, context):
+        order = create_order_in_db(
+            customer_id=request.customer_id,
+            items=request.items,
+        )
+        return pb2.CreateOrderResponse(order=order)
+
+    def GetOrder(self, request, context):
+        order = get_order_from_db(request.id)
+        if not order:
+            context.set_code(grpc.StatusCode.NOT_FOUND)
+            context.set_details(f"Order {request.id} not found")
+            return pb2.Order()
+        return order
+
+    def StreamOrderUpdates(self, request, context):
+        """Server streaming: push updates as they happen"""
+        for update in subscribe_to_order_updates(request.id):
+            yield pb2.OrderUpdate(
+                order_id=request.id,
+                status=update.status,
+                timestamp=update.timestamp,
+            )
+
+server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+pb2_grpc.add_OrderServiceServicer_to_server(OrderService(), server)
+server.add_insecure_port("[::]:50051")
+server.start()
+```
+
+## Client Usage (Python)
+
+```python
+import grpc
+import order_service_pb2 as pb2
+import order_service_pb2_grpc as pb2_grpc
+
+channel = grpc.insecure_channel("order-service:50051")
+client = pb2_grpc.OrderServiceStub(channel)
+
+# Unary call
+response = client.CreateOrder(pb2.CreateOrderRequest(
+    customer_id="cust-42",
+    items=[pb2.OrderItem(product_id="prod-1", quantity=2, price_cents=2999)],
+))
+print(f"Created order: {response.order.id}")
+
+# Server streaming
+for update in client.StreamOrderUpdates(pb2.GetOrderRequest(id="order-123")):
+    print(f"Order {update.order_id}: {update.status}")
+```
+
+## gRPC vs REST
+
+| Feature | REST | gRPC |
+|---------|------|------|
+| Transport | HTTP/1.1 | HTTP/2 |
+| Format | JSON (text) | Protobuf (binary) |
+| Contract | OpenAPI (optional) | .proto (required) |
+| Streaming | Workarounds (SSE, WebSocket) | Native bidirectional |
+| Browser support | Native | Requires gRPC-Web proxy |
+| Code generation | Optional | Built-in |
+| Performance | Good | Better (2-10x for serialization) |
+
+## Communication Patterns
+
+gRPC supports four patterns:
+
+```
+Unary:              Client → Server → Client        (like REST)
+Server streaming:   Client → Server →→→ Client      (server pushes updates)
+Client streaming:   Client →→→ Server → Client      (client sends stream)
+Bidirectional:      Client ←→ Server                 (both stream)
+```
+
+## Common Pitfalls
+
+- **Using gRPC for browser-facing APIs** -- Browsers can't make native gRPC calls. Use REST/GraphQL for frontend APIs and gRPC for service-to-service.
+- **Not versioning your protos** -- Proto fields are numbered. Never reuse a field number. Use `reserved` for removed fields.
+- **Ignoring deadlines** -- Always set deadlines (timeouts) on gRPC calls to prevent hanging requests.
+- **Large messages** -- gRPC has a default 4MB message limit. Stream large datasets instead of sending them in one message.
+
+## Best Practices
+
+- Use gRPC for internal service-to-service communication
+- Use REST for public-facing and browser APIs
+- Always set deadlines on client calls
+- Use server streaming for real-time updates
+- Version your proto files carefully -- never reuse field numbers
+- Use interceptors for cross-cutting concerns (auth, logging, metrics)

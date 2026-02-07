@@ -3,6 +3,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  schedule:
+    # Rebuild daily at 12:00 UTC to publish scheduled concepts
+    - cron: '0 12 * * *'
   workflow_dispatch:
 
 permissions:

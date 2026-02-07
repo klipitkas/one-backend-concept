@@ -1,0 +1,155 @@
+---
+title: "Content Delivery Networks"
+slug: "2026-02-11-cdn"
+date: "2026-02-11"
+category: "Infrastructure"
+difficulty: "Beginner"
+tags: ["CDN", "Performance", "Caching", "Infrastructure"]
+description: "How CDNs distribute content globally to reduce latency and improve reliability for users everywhere"
+---
+
+## Overview
+
+A Content Delivery Network (CDN) is a globally distributed network of servers that caches and serves content from locations close to the user. Instead of every request traveling to your origin server (which might be in a single data center), the CDN serves content from the nearest edge location, dramatically reducing latency.
+
+```
+Without CDN:
+  User (Tokyo) ──── 200ms ──── Origin (Virginia)
+
+With CDN:
+  User (Tokyo) ──── 10ms ──── CDN Edge (Tokyo)
+                                  |
+                            (cache miss only)
+                                  |
+                              Origin (Virginia)
+```
+
+## How CDNs Work
+
+1. A user requests `https://example.com/image.png`
+2. DNS resolves to the nearest CDN edge server
+3. If the edge has the file cached, it serves it immediately (cache hit)
+4. If not, the edge fetches it from the origin, caches it, and serves it (cache miss)
+5. Subsequent requests from nearby users get the cached copy
+
+### Cache Headers
+
+Your origin server controls CDN caching behavior through HTTP headers.
+
+```python
+from flask import Flask, send_file
+
+app = Flask(__name__)
+
+@app.route("/static/<path:filename>")
+def static_file(filename):
+    response = send_file(f"static/{filename}")
+    # Cache at CDN for 1 year (immutable assets with hashed filenames)
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+@app.route("/api/products")
+def products():
+    data = get_products()
+    response = jsonify(data)
+    # Cache at CDN for 60 seconds, revalidate after
+    response.headers["Cache-Control"] = "public, s-maxage=60, stale-while-revalidate=30"
+    return response
+
+@app.route("/api/user/profile")
+def profile():
+    # Never cache user-specific data at the CDN
+    response = jsonify(get_user_profile())
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+```
+
+Key cache headers:
+- `public` -- CDN can cache this
+- `private` -- Only the user's browser can cache this
+- `s-maxage` -- CDN-specific max age (overrides `max-age` for CDNs)
+- `stale-while-revalidate` -- Serve stale content while fetching fresh copy in background
+- `no-store` -- Never cache this anywhere
+
+## What to Put on a CDN
+
+| Content Type | CDN Caching | TTL |
+|-------------|-------------|-----|
+| Static assets (JS, CSS, images) | Yes | Long (1 year with hash) |
+| API responses (public data) | Yes | Short (60s - 5min) |
+| HTML pages | Depends | Short or none |
+| User-specific data | No | Never |
+| Authentication endpoints | No | Never |
+
+## CDN Configuration Example
+
+```javascript
+// CloudFront-style CDN configuration
+const distribution = {
+  origins: [{
+    domainName: "api.example.com",
+    id: "api-origin",
+  }],
+  defaultCacheBehavior: {
+    // Forward these headers to origin (don't cache per-header)
+    forwardedValues: {
+      headers: ["Authorization"],
+      queryString: true,
+    },
+    viewerProtocolPolicy: "redirect-to-https",
+    ttl: { default: 86400, max: 31536000, min: 0 },
+  },
+  cacheBehaviors: [
+    {
+      pathPattern: "/api/*",
+      ttl: { default: 0 }, // Don't cache API by default
+      forwardedValues: { headers: ["*"] },
+    },
+    {
+      pathPattern: "/static/*",
+      ttl: { default: 31536000 }, // Cache static assets for 1 year
+      compress: true,
+    },
+  ],
+};
+```
+
+## Cache Invalidation
+
+When content changes, you need to invalidate the CDN cache.
+
+```bash
+# Purge specific URLs
+aws cloudfront create-invalidation \
+  --distribution-id E1234567890 \
+  --paths "/api/products" "/index.html"
+
+# Purge everything (expensive, use sparingly)
+aws cloudfront create-invalidation \
+  --distribution-id E1234567890 \
+  --paths "/*"
+```
+
+The better approach: use **content-addressed URLs** for static assets. Instead of invalidating `/app.js`, deploy as `/app.a1b2c3d4.js`. The hash changes when the content changes, so the old URL stays cached (harmlessly) and the new URL is fetched fresh.
+
+## Popular CDN Providers
+
+- **Cloudflare** -- Large free tier, integrated DDoS protection, Workers for edge compute
+- **AWS CloudFront** -- Deep AWS integration, Lambda@Edge for custom logic
+- **Fastly** -- Real-time purging, VCL configuration, edge compute
+- **Vercel/Netlify** -- Built-in CDN for static sites and Next.js apps
+
+## Common Pitfalls
+
+- **Caching authenticated responses** -- If the CDN caches a response that includes user-specific data, all users may see that data. Always set `Cache-Control: private` or `no-store` for authenticated endpoints.
+- **Not varying by the right headers** -- If your response differs based on `Accept-Language` or `Accept-Encoding`, you need to configure the CDN to vary its cache by those headers.
+- **Over-purging** -- Purging the entire CDN cache on every deploy defeats the purpose. Use content hashing for static assets.
+- **Ignoring cache poisoning** -- If an attacker can cause the CDN to cache a malicious response, every user receives it. Validate cache keys carefully.
+
+## Best Practices
+
+- **Use content hashing** for static assets so you never need to invalidate them
+- **Set appropriate TTLs** -- Long for immutable assets, short or zero for dynamic content
+- **Enable compression** -- CDNs can gzip/brotli content at the edge, reducing transfer size
+- **Monitor cache hit rates** -- Aim for 90%+ hit rate on static content. Low hit rates mean you're paying for a CDN without the benefit.
+- **Use `stale-while-revalidate`** -- Serves cached content instantly while fetching updates in the background

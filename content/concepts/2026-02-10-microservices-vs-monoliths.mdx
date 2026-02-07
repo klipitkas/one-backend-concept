@@ -1,0 +1,157 @@
+---
+title: "Microservices vs Monoliths"
+slug: "2026-02-10-microservices-vs-monoliths"
+date: "2026-02-10"
+category: "Architecture"
+difficulty: "Beginner"
+tags: ["Microservices", "Monolith", "Architecture", "System Design"]
+description: "Comparing monolithic and microservice architectures to understand when each approach makes sense"
+---
+
+## Overview
+
+A monolith is a single application where all functionality lives in one codebase and deploys as one unit. Microservices split that functionality into independent services, each responsible for a specific domain, deployed and scaled separately.
+
+Neither is inherently better. The right choice depends on your team size, complexity, and stage of growth.
+
+## Monolithic Architecture
+
+Everything runs in a single process. A web request enters the application, hits the routing layer, calls business logic, queries the database, and returns a response -- all within one application.
+
+```python
+# A monolith: everything in one app
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route("/api/users/<id>")
+def get_user(id):
+    user = db.query("SELECT * FROM users WHERE id = %s", (id,))
+    orders = db.query("SELECT * FROM orders WHERE user_id = %s", (id,))
+    return {"user": user, "orders": orders}
+
+@app.route("/api/orders", methods=["POST"])
+def create_order():
+    order = validate_order(request.json)
+    charge_payment(order)
+    update_inventory(order)
+    send_confirmation_email(order)
+    return {"order_id": order.id}
+```
+
+**Strengths:**
+- Simple to develop, test, and deploy
+- No network latency between components
+- Easy to refactor -- just move code around
+- One codebase to understand
+
+**Weaknesses:**
+- Scaling means scaling everything, even if only one feature needs it
+- A bug in one module can crash the entire application
+- Large codebases become difficult to understand over time
+- Long build and deploy times as the app grows
+
+## Microservice Architecture
+
+Each service owns a specific domain and communicates over the network.
+
+```
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│  Users   │   │  Orders  │   │ Payments │
+│ Service  │   │ Service  │   │ Service  │
+│ (Node.js)│   │ (Python) │   │  (Go)    │
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     │              │              │
+     └──────┬───────┴──────┬───────┘
+            │              │
+      ┌─────┴──┐    ┌──────┴─┐
+      │Users DB│    │Orders  │
+      │(Postgres)   │DB (MySQL)
+      └────────┘    └────────┘
+```
+
+```python
+# Orders service: calls other services over HTTP
+import httpx
+
+async def create_order(order_data):
+    # Validate user exists
+    user = await httpx.get(f"http://users-svc/api/users/{order_data['user_id']}")
+
+    # Process payment
+    payment = await httpx.post("http://payments-svc/api/charge", json={
+        "amount": order_data["total"],
+        "user_id": order_data["user_id"],
+    })
+
+    # Save order
+    order = await db.execute(
+        "INSERT INTO orders (user_id, total, payment_id) VALUES ($1, $2, $3)",
+        order_data["user_id"], order_data["total"], payment.json()["id"]
+    )
+    return order
+```
+
+**Strengths:**
+- Scale individual services independently
+- Different teams own different services
+- Use the best language/technology for each service
+- Failure in one service doesn't crash others
+
+**Weaknesses:**
+- Network calls add latency and failure modes
+- Distributed debugging is much harder
+- Data consistency across services is complex
+- Significant operational overhead (deployment, monitoring, networking)
+
+## When to Choose What
+
+**Start with a monolith when:**
+- Your team is small (fewer than 10 engineers)
+- You are still figuring out your domain boundaries
+- You need to move fast and iterate quickly
+- You don't have the DevOps maturity for microservices
+
+**Move to microservices when:**
+- Multiple teams need to deploy independently
+- Different parts of the system have very different scaling needs
+- The monolith's deploy cycle is slowing you down
+- Domain boundaries are well understood
+
+## The Modular Monolith
+
+A middle ground: structure your monolith with clear module boundaries that could become services later.
+
+```
+src/
+  modules/
+    users/
+      routes.py
+      service.py
+      models.py
+    orders/
+      routes.py
+      service.py
+      models.py
+    payments/
+      routes.py
+      service.py
+      models.py
+```
+
+Each module has a clean public API. Modules communicate through function calls, not direct database queries across boundaries. When you're ready to extract a microservice, the boundary already exists.
+
+## Common Pitfalls
+
+- **Premature microservices** -- Starting with microservices before understanding your domain leads to wrong service boundaries that are expensive to fix.
+- **Distributed monolith** -- Microservices that must be deployed together and share databases. You get the worst of both worlds.
+- **Ignoring operational complexity** -- Microservices require service discovery, distributed tracing, centralized logging, and container orchestration. Budget for this.
+- **Too many services too early** -- Start with a few coarse-grained services and split further only when needed.
+
+## Best Practices
+
+- **Start monolithic, extract services when needed** -- The "monolith first" approach lets you discover boundaries naturally
+- **Split along domain boundaries** -- Use Domain-Driven Design to identify bounded contexts
+- **Each service owns its data** -- No shared databases between services
+- **Invest in observability early** -- Distributed tracing, centralized logging, and health checks are mandatory
+- **Use async communication** -- Message queues between services reduce coupling and improve resilience

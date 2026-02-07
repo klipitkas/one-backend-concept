@@ -1,0 +1,235 @@
+---
+title: "Blue-Green Deployments"
+slug: "2026-03-08-blue-green-deployments"
+date: "2026-03-08"
+category: "Infrastructure"
+difficulty: "Intermediate"
+tags: ["Blue-Green", "Deployments", "Zero Downtime", "Infrastructure"]
+description: "How blue-green deployments enable zero-downtime releases with instant rollback capability"
+---
+
+## Overview
+
+Blue-green deployment runs two identical production environments. "Blue" is the current live version. "Green" is the new version. You deploy to green, test it, then switch traffic from blue to green. If something goes wrong, you switch back to blue instantly. No downtime, no half-deployed states.
+
+## How It Works
+
+```
+Step 1: Blue is live, green is idle
+  Users → Load Balancer → [Blue: v1.0] ✓
+                           [Green: idle]
+
+Step 2: Deploy v2.0 to green, run tests
+  Users → Load Balancer → [Blue: v1.0] ✓
+                           [Green: v2.0] (testing)
+
+Step 3: Switch traffic to green
+  Users → Load Balancer → [Blue: v1.0]
+                           [Green: v2.0] ✓
+
+Step 4 (if needed): Rollback to blue instantly
+  Users → Load Balancer → [Blue: v1.0] ✓
+                           [Green: v2.0] (broken)
+```
+
+## Implementation with Kubernetes
+
+```yaml
+# blue-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: api
+        version: blue
+    spec:
+      containers:
+        - name: api
+          image: myapp/api:1.0.0
+          ports:
+            - containerPort: 8080
+---
+# green-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-green
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api
+      version: green
+  template:
+    metadata:
+      labels:
+        app: api
+        version: green
+    spec:
+      containers:
+        - name: api
+          image: myapp/api:2.0.0
+          ports:
+            - containerPort: 8080
+---
+# service.yaml -- switch between blue and green
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+spec:
+  selector:
+    app: api
+    version: blue    # ← Change to "green" to switch
+  ports:
+    - port: 80
+      targetPort: 8080
+```
+
+```bash
+# Deploy green
+kubectl apply -f green-deployment.yaml
+
+# Wait for green to be ready
+kubectl rollout status deployment/api-green
+
+# Run smoke tests against green
+curl http://api-green-internal:8080/healthz
+
+# Switch traffic to green
+kubectl patch service api-service -p '{"spec":{"selector":{"version":"green"}}}'
+
+# If something goes wrong, switch back to blue
+kubectl patch service api-service -p '{"spec":{"selector":{"version":"blue"}}}'
+```
+
+## Implementation with NGINX
+
+```nginx
+# /etc/nginx/conf.d/api.conf
+
+upstream api_blue {
+    server 10.0.1.1:8080;
+    server 10.0.1.2:8080;
+    server 10.0.1.3:8080;
+}
+
+upstream api_green {
+    server 10.0.2.1:8080;
+    server 10.0.2.2:8080;
+    server 10.0.2.3:8080;
+}
+
+server {
+    listen 80;
+    server_name api.example.com;
+
+    location / {
+        proxy_pass http://api_blue;  # Switch to api_green for cutover
+    }
+}
+```
+
+```bash
+# Switch traffic
+sed -i 's/api_blue/api_green/' /etc/nginx/conf.d/api.conf
+nginx -s reload
+```
+
+## Deployment Script
+
+```python
+#!/usr/bin/env python3
+"""Blue-green deployment automation."""
+
+import subprocess
+import sys
+import time
+
+def run(cmd):
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"FAILED: {cmd}\n{result.stderr}")
+        sys.exit(1)
+    return result.stdout
+
+def get_active_version():
+    output = run("kubectl get service api-service -o jsonpath='{.spec.selector.version}'")
+    return output.strip("'")
+
+def deploy(new_version, image_tag):
+    active = get_active_version()
+    inactive = "green" if active == "blue" else "blue"
+
+    print(f"Active: {active}, Deploying to: {inactive}")
+
+    # Deploy to inactive environment
+    run(f"kubectl set image deployment/api-{inactive} api=myapp/api:{image_tag}")
+    run(f"kubectl rollout status deployment/api-{inactive} --timeout=300s")
+
+    # Smoke test
+    print("Running smoke tests...")
+    run(f"kubectl exec deploy/api-{inactive} -- curl -sf localhost:8080/healthz")
+
+    # Switch traffic
+    print(f"Switching traffic to {inactive}...")
+    run(f"kubectl patch service api-service -p '{{\"spec\":{{\"selector\":{{\"version\":\"{inactive}\"}}}}}}'")
+
+    print(f"Deployed {image_tag} to {inactive}. Previous version on {active}.")
+    print(f"To rollback: kubectl patch service api-service -p '{{\"spec\":{{\"selector\":{{\"version\":\"{active}\"}}}}}}'")
+
+if __name__ == "__main__":
+    deploy(sys.argv[1], sys.argv[2])
+```
+
+## Blue-Green vs Canary vs Rolling
+
+| Feature | Blue-Green | Canary | Rolling |
+|---------|-----------|--------|---------|
+| Rollback speed | Instant | Fast | Slow (must roll back each pod) |
+| Resource cost | 2x (two full environments) | 1x + small canary | 1x |
+| Risk | All-or-nothing switch | Gradual exposure | Gradual replacement |
+| Complexity | Medium | High | Low |
+
+## Database Migrations
+
+The hardest part of blue-green deployments. Both versions must work with the same database.
+
+```
+Step 1: Deploy backward-compatible migration
+  - Add new column (nullable)
+  - Both v1 and v2 work with the schema
+
+Step 2: Deploy v2 (writes to new column)
+  - v1 ignores new column
+  - v2 uses new column
+
+Step 3: Backfill data and make column non-nullable
+
+Step 4: Remove old column in a future migration
+```
+
+## Common Pitfalls
+
+- **Database schema incompatibility** -- If v2 requires a schema change that breaks v1, you can't roll back. Always use backward-compatible migrations.
+- **Long-lived connections** -- WebSocket connections to blue don't automatically move to green. Plan for connection draining.
+- **Forgetting to test green** -- Always run smoke tests on the inactive environment before switching.
+- **Not cleaning up** -- The old environment should be scaled down (but not deleted) after a successful switch to save resources.
+
+## Best Practices
+
+- Always test the inactive environment before switching traffic
+- Keep both environments running for 30-60 minutes after switch for quick rollback
+- Use backward-compatible database migrations
+- Automate the entire switch process -- manual switches are error-prone
+- Monitor error rates closely for 15 minutes after switching
+- Drain connections gracefully before decommissioning the old environment

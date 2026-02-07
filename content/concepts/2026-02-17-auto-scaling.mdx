@@ -1,0 +1,150 @@
+---
+title: "Auto-Scaling"
+slug: "2026-02-17-auto-scaling"
+date: "2026-02-17"
+category: "Scalability"
+difficulty: "Intermediate"
+tags: ["Auto-Scaling", "Cloud", "Scalability", "Infrastructure"]
+description: "How auto-scaling dynamically adjusts compute resources based on demand to optimize cost and performance"
+---
+
+## Overview
+
+Auto-scaling automatically adjusts the number of running instances based on current demand. When traffic spikes, new instances spin up. When traffic drops, excess instances are terminated. This optimizes both performance (enough capacity for peak load) and cost (no paying for idle servers during quiet periods).
+
+## How It Works
+
+An auto-scaler monitors metrics and compares them to thresholds you define:
+
+```
+Traffic increases → CPU exceeds 70% → Scale out (add instances)
+Traffic decreases → CPU below 30% → Scale in (remove instances)
+
+Min: 2 instances (always running)
+Max: 20 instances (cost cap)
+```
+
+## Scaling Policies
+
+### Target Tracking
+
+Set a target value and the auto-scaler adjusts to maintain it.
+
+```yaml
+# AWS Auto Scaling policy
+auto_scaling_policy:
+  policy_type: TargetTrackingScaling
+  target_tracking_configuration:
+    predefined_metric_specification:
+      predefined_metric_type: ASGAverageCPUUtilization
+    target_value: 60.0  # Maintain ~60% CPU
+    scale_in_cooldown: 300   # Wait 5 min before scaling in
+    scale_out_cooldown: 60   # Wait 1 min before scaling out
+```
+
+### Step Scaling
+
+Different actions at different thresholds:
+
+```yaml
+# Scale aggressively when load is very high
+step_adjustments:
+  - metric_interval_lower_bound: 0    # 70-80% CPU
+    metric_interval_upper_bound: 10
+    scaling_adjustment: 1              # Add 1 instance
+  - metric_interval_lower_bound: 10   # 80-90% CPU
+    metric_interval_upper_bound: 20
+    scaling_adjustment: 2              # Add 2 instances
+  - metric_interval_lower_bound: 20   # 90%+ CPU
+    scaling_adjustment: 4              # Add 4 instances
+```
+
+### Scheduled Scaling
+
+Pre-scale for known traffic patterns:
+
+```python
+# Scale up before known peak hours
+import boto3
+
+client = boto3.client("autoscaling")
+
+# Every weekday at 8 AM: minimum 10 instances
+client.put_scheduled_update_group_action(
+    AutoScalingGroupName="my-api",
+    ScheduledActionName="morning-scale-up",
+    Recurrence="0 8 * * MON-FRI",
+    MinSize=10,
+    DesiredCapacity=10,
+)
+
+# Every weekday at 8 PM: back to minimum 2
+client.put_scheduled_update_group_action(
+    AutoScalingGroupName="my-api",
+    ScheduledActionName="evening-scale-down",
+    Recurrence="0 20 * * MON-FRI",
+    MinSize=2,
+    DesiredCapacity=2,
+)
+```
+
+## Kubernetes Horizontal Pod Autoscaler
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-api
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+```
+
+## Prerequisites for Auto-Scaling
+
+Auto-scaling only works if your application is **stateless**. If a server stores session data in memory, terminating it loses that data.
+
+```python
+# ❌ Stateful: session in memory
+sessions = {}
+
+# ✅ Stateless: session in external store
+import redis
+session_store = redis.Redis(host="redis-cluster")
+```
+
+Your application also needs fast startup times. An instance that takes 5 minutes to boot can't respond to a traffic spike. Optimize container images and initialization code.
+
+## Common Pitfalls
+
+- **Scaling on the wrong metric** -- CPU isn't always the bottleneck. If your app is I/O-bound, scale on request count or queue depth instead.
+- **Cooldown periods too short** -- Without cooldown, the auto-scaler oscillates: scaling out, then immediately scaling in, then out again (thrashing).
+- **No maximum limit** -- A traffic spike (or a DDoS attack) without a max instance limit can result in a massive cloud bill.
+- **Stateful applications** -- Instances that store state in memory lose that data when terminated.
+- **Slow startup times** -- New instances must be ready quickly. Optimize boot time, use pre-warmed pools, or use scheduled scaling for predictable peaks.
+
+## Best Practices
+
+- Make your application stateless before enabling auto-scaling
+- Set reasonable min/max bounds
+- Use multiple scaling metrics (CPU + request latency + queue depth)
+- Set cooldown periods to prevent thrashing (60s for scale-out, 300s for scale-in)
+- Combine reactive scaling with scheduled scaling for predictable patterns
+- Load test to find the right thresholds before going to production

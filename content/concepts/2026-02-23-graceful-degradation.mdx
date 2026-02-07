@@ -1,0 +1,169 @@
+---
+title: "Graceful Degradation"
+slug: "2026-02-23-graceful-degradation"
+date: "2026-02-23"
+category: "Reliability"
+difficulty: "Intermediate"
+tags: ["Graceful Degradation", "Reliability", "Fault Tolerance", "Resilience"]
+description: "How to keep your system useful when parts of it fail, instead of returning errors to every user"
+---
+
+## Overview
+
+Graceful degradation means your system continues to function -- with reduced capability -- when a dependency fails. Instead of showing a 500 error because the recommendation engine is down, you show the page without recommendations. The user gets a slightly worse experience, but they still get an experience.
+
+## Degradation vs Failure
+
+```python
+# ❌ Hard failure: one broken service takes down the whole page
+@app.route("/api/product/<id>")
+def get_product(id):
+    product = product_service.get(id)
+    reviews = review_service.get(id)          # If this throws, user gets nothing
+    recommendations = rec_service.get(id)      # If this throws, user gets nothing
+    return jsonify({
+        "product": product,
+        "reviews": reviews,
+        "recommendations": recommendations,
+    })
+
+# ✅ Graceful degradation: broken services return defaults
+@app.route("/api/product/<id>")
+def get_product(id):
+    product = product_service.get(id)  # Core data -- must succeed
+
+    try:
+        reviews = review_service.get(id)
+    except ServiceError:
+        reviews = []  # No reviews is better than no page
+
+    try:
+        recommendations = rec_service.get(id)
+    except ServiceError:
+        recommendations = []  # No recs is better than an error
+
+    return jsonify({
+        "product": product,
+        "reviews": reviews,
+        "recommendations": recommendations,
+    })
+```
+
+## Circuit Breaker Pattern
+
+A circuit breaker prevents your service from repeatedly calling a failing dependency. After enough failures, it "opens" the circuit and returns a fallback immediately.
+
+```python
+import time
+
+class CircuitBreaker:
+    def __init__(self, failure_threshold=5, recovery_timeout=30):
+        self.failure_count = 0
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.last_failure_time = 0
+        self.state = "closed"  # closed = normal, open = failing, half_open = testing
+
+    def call(self, fn, fallback):
+        if self.state == "open":
+            if time.time() - self.last_failure_time > self.recovery_timeout:
+                self.state = "half_open"
+            else:
+                return fallback()
+
+        try:
+            result = fn()
+            if self.state == "half_open":
+                self.state = "closed"
+                self.failure_count = 0
+            return result
+        except Exception:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            if self.failure_count >= self.failure_threshold:
+                self.state = "open"
+            return fallback()
+
+# Usage
+rec_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=60)
+
+def get_recommendations(product_id):
+    return rec_breaker.call(
+        fn=lambda: rec_service.get(product_id),
+        fallback=lambda: [],  # Empty list when circuit is open
+    )
+```
+
+## Bulkhead Pattern
+
+Isolate failures so one slow dependency doesn't consume all your resources.
+
+```python
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
+# Each service gets its own thread pool (bulkhead)
+review_pool = ThreadPoolExecutor(max_workers=5)
+rec_pool = ThreadPoolExecutor(max_workers=5)
+
+@app.route("/api/product/<id>")
+def get_product(id):
+    product = product_service.get(id)
+
+    review_future = review_pool.submit(review_service.get, id)
+    rec_future = rec_pool.submit(rec_service.get, id)
+
+    try:
+        reviews = review_future.result(timeout=2.0)
+    except (TimeoutError, Exception):
+        reviews = []
+
+    try:
+        recommendations = rec_future.result(timeout=2.0)
+    except (TimeoutError, Exception):
+        recommendations = []
+
+    return jsonify({
+        "product": product,
+        "reviews": reviews,
+        "recommendations": recommendations,
+    })
+```
+
+## Feature-Level Degradation
+
+Disable entire features when under extreme load or during outages.
+
+```python
+FEATURE_FLAGS = {
+    "reviews": True,
+    "recommendations": True,
+    "search_autocomplete": True,
+}
+
+def get_product_page(product_id):
+    data = {"product": product_service.get(product_id)}
+
+    if FEATURE_FLAGS["reviews"]:
+        data["reviews"] = safe_call(review_service.get, product_id, default=[])
+
+    if FEATURE_FLAGS["recommendations"]:
+        data["recommendations"] = safe_call(rec_service.get, product_id, default=[])
+
+    return data
+```
+
+## Common Pitfalls
+
+- **Treating all dependencies as equal** -- Core data (the product itself) must succeed. Supplementary data (reviews, recommendations) can degrade.
+- **Silent degradation without logging** -- If you swallow errors, log them. Otherwise you won't know half your features have been broken for a week.
+- **Fallbacks that call other failing services** -- A fallback that hits the same broken database isn't a fallback.
+- **No timeout on dependency calls** -- Without timeouts, a hung service blocks your threads forever.
+
+## Best Practices
+
+- Classify dependencies as critical vs optional
+- Set timeouts on every external call
+- Use circuit breakers for frequently called services
+- Log every degradation event for monitoring
+- Test degradation paths -- they're code paths too and can have bugs
+- Use bulkheads to isolate resource usage per dependency

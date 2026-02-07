@@ -1,0 +1,131 @@
+---
+title: "Async Processing"
+slug: "2026-02-19-async-processing"
+date: "2026-02-19"
+category: "Scalability"
+difficulty: "Intermediate"
+tags: ["Async", "Background Jobs", "Queues", "Scalability"]
+description: "How asynchronous processing patterns decouple work from request cycles to improve throughput and user experience"
+---
+
+## Overview
+
+Async processing moves time-consuming work out of the request-response cycle. Instead of making the user wait while you send emails, resize images, or process payments, you queue the work and return immediately. A background worker picks up the task and processes it independently.
+
+## When to Go Async
+
+If it takes more than a few hundred milliseconds and the user doesn't need the result immediately, it's a candidate for async processing.
+
+```python
+# ❌ Synchronous: user waits 3+ seconds
+@app.route("/api/orders", methods=["POST"])
+def create_order():
+    order = save_order(request.json)        # 50ms
+    charge_payment(order)                    # 800ms
+    send_confirmation_email(order)           # 1200ms
+    generate_invoice_pdf(order)              # 600ms
+    notify_warehouse(order)                  # 400ms
+    return {"order_id": order.id}            # Total: ~3s
+
+# ✅ Async: user gets response in 100ms
+@app.route("/api/orders", methods=["POST"])
+def create_order():
+    order = save_order(request.json)         # 50ms
+    charge_payment(order)                    # 800ms (must be sync - user needs to know)
+    queue.enqueue("send_confirmation_email", order.id)
+    queue.enqueue("generate_invoice_pdf", order.id)
+    queue.enqueue("notify_warehouse", order.id)
+    return {"order_id": order.id}            # Total: ~850ms
+```
+
+## Implementation with Celery
+
+```python
+# tasks.py
+from celery import Celery
+
+app = Celery("tasks", broker="redis://localhost:6379/0")
+
+@app.task(bind=True, max_retries=3)
+def send_confirmation_email(self, order_id):
+    try:
+        order = get_order(order_id)
+        email_service.send(
+            to=order.customer_email,
+            subject=f"Order #{order.id} confirmed",
+            template="order_confirmation",
+            data=order.to_dict(),
+        )
+    except EmailServiceError as e:
+        self.retry(exc=e, countdown=60 * (self.request.retries + 1))
+
+@app.task
+def generate_invoice_pdf(order_id):
+    order = get_order(order_id)
+    pdf = render_invoice(order)
+    s3.upload(f"invoices/{order.id}.pdf", pdf)
+    db.execute("UPDATE orders SET invoice_url = %s WHERE id = %s",
+               (f"invoices/{order.id}.pdf", order.id))
+```
+
+## Implementation with BullMQ (Node.js)
+
+```javascript
+import { Queue, Worker } from "bullmq";
+
+const emailQueue = new Queue("emails", { connection: { host: "redis" } });
+
+// Producer: enqueue jobs
+async function onOrderCreated(order) {
+  await emailQueue.add("confirmation", { orderId: order.id }, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 5000 },
+  });
+}
+
+// Consumer: process jobs
+const worker = new Worker("emails", async (job) => {
+  const order = await getOrder(job.data.orderId);
+  await emailService.send({
+    to: order.customerEmail,
+    subject: `Order #${order.id} confirmed`,
+  });
+}, { connection: { host: "redis" } });
+```
+
+## Patterns
+
+### Fire and Forget
+Queue the task and don't wait for the result. Best for notifications and logging.
+
+### Request-Reply
+Queue the task, give the client a job ID, and let them poll for the result.
+
+```python
+@app.route("/api/reports", methods=["POST"])
+def create_report():
+    job = queue.enqueue("generate_report", request.json)
+    return {"job_id": job.id, "status_url": f"/api/jobs/{job.id}"}
+
+@app.route("/api/jobs/<job_id>")
+def check_job(job_id):
+    job = queue.get_job(job_id)
+    if job.is_finished:
+        return {"status": "complete", "result": job.result}
+    return {"status": "processing"}
+```
+
+## Common Pitfalls
+
+- **No retry logic** -- Async tasks fail. Always configure retries with backoff.
+- **No dead letter queue** -- Tasks that fail all retries need somewhere to go for investigation.
+- **Non-idempotent tasks** -- If a task runs twice (due to retry), it should produce the same result. Don't charge a credit card twice.
+- **Unbounded queues** -- Without backpressure, a spike can fill the queue faster than workers can drain it.
+
+## Best Practices
+
+- Keep tasks small, focused, and idempotent
+- Use exponential backoff for retries
+- Monitor queue depth and worker throughput
+- Set up dead letter queues for failed tasks
+- Log task execution with correlation IDs for tracing

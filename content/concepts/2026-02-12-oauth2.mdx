@@ -1,0 +1,144 @@
+---
+title: "OAuth 2.0"
+slug: "2026-02-12-oauth2"
+date: "2026-02-12"
+category: "Security"
+difficulty: "Intermediate"
+tags: ["OAuth", "Authentication", "Authorization", "Security"]
+description: "Understanding the OAuth 2.0 authorization framework and its grant types for secure API access"
+---
+
+## Overview
+
+OAuth 2.0 is an authorization framework that lets third-party applications access a user's resources without sharing their password. When you click "Sign in with Google," OAuth 2.0 is the protocol making that possible.
+
+The key insight is delegation. Instead of giving an application your password, you authorize it to do specific things on your behalf via a scoped, time-limited token.
+
+## The Authorization Code Flow
+
+The most common and secure flow, used by web applications with a backend server.
+
+```
+1. User clicks "Login with Google"
+2. App redirects to Google's auth page
+3. User logs in and grants permission
+4. Google redirects back with an authorization code
+5. App backend exchanges the code for tokens
+6. App uses the access token to call Google APIs
+```
+
+```python
+# Flask OAuth 2.0 callback handler
+@app.route("/callback")
+def callback():
+    if request.args.get("state") != session.get("oauth_state"):
+        return jsonify({"error": "Invalid state"}), 403
+
+    code = request.args.get("code")
+    token_response = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "redirect_uri": REDIRECT_URI,
+            "grant_type": "authorization_code",
+        },
+    )
+
+    tokens = token_response.json()
+    access_token = tokens["access_token"]
+
+    # Use access token to get user info
+    user_info = requests.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+    ).json()
+
+    session["user_id"] = find_or_create_user(user_info)
+    return redirect("/dashboard")
+```
+
+## Authorization Code with PKCE
+
+For single-page apps and mobile apps that cannot securely store a client secret, use PKCE (Proof Key for Code Exchange).
+
+```javascript
+// Generate PKCE challenge
+async function startLogin() {
+  const codeVerifier = generateRandomString(128);
+  sessionStorage.setItem("code_verifier", codeVerifier);
+
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(codeVerifier));
+  const codeChallenge = base64UrlEncode(digest);
+
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("client_id", CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+  authUrl.searchParams.set("scope", "openid email profile");
+  authUrl.searchParams.set("code_challenge", codeChallenge);
+  authUrl.searchParams.set("code_challenge_method", "S256");
+
+  window.location.href = authUrl.toString();
+}
+```
+
+## Client Credentials Flow
+
+For server-to-server communication where no user is involved.
+
+```python
+def get_service_token():
+    response = requests.post(
+        "https://auth.example.com/oauth/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": "payment-service",
+            "client_secret": "service-secret",
+            "scope": "orders:read inventory:write",
+        },
+    )
+    return response.json()["access_token"]
+```
+
+## Scopes
+
+Scopes define what permissions the application requests. Follow the principle of least privilege.
+
+```python
+# Only request what you need
+SCOPES = {
+    "basic_login": "openid email profile",
+    "read_calendar": "openid email https://www.googleapis.com/auth/calendar.readonly",
+}
+
+# Validate scopes on your resource server
+def require_scope(required_scope):
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            token_scopes = decode_token(get_token())["scope"].split()
+            if required_scope not in token_scopes:
+                return jsonify({"error": "insufficient_scope"}), 403
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+```
+
+## Common Pitfalls
+
+- **Not validating the state parameter** -- Skipping CSRF protection lets attackers link their OAuth identity to a victim's account.
+- **Storing tokens in localStorage** -- XSS can steal them. Use httpOnly cookies or in-memory storage.
+- **Requesting too many scopes** -- Erodes user trust and increases damage from a token leak.
+- **Using the implicit flow** -- Deprecated. Tokens in URL fragments leak through browser history and logs. Use Authorization Code with PKCE.
+- **Treating OAuth as authentication** -- OAuth is authorization. Use OpenID Connect (OIDC) on top for authentication.
+
+## Best Practices
+
+- **Always use PKCE**, even for server-side apps
+- **Keep access tokens short-lived** (15 minutes), use refresh tokens for longer sessions
+- **Encrypt tokens at rest** in your database
+- **Use well-tested libraries** -- Don't implement OAuth from scratch
+- **Implement token revocation** so users can disconnect third-party apps

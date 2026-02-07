@@ -1,0 +1,174 @@
+---
+title: "Query Optimization"
+slug: "2026-02-26-query-optimization"
+date: "2026-02-26"
+category: "Databases"
+difficulty: "Intermediate"
+tags: ["SQL", "Query Optimization", "Databases", "Performance"]
+description: "Practical techniques for finding and fixing slow database queries -- indexes, EXPLAIN plans, and common anti-patterns"
+---
+
+## Overview
+
+Slow queries are the most common performance bottleneck in backend systems. A single missing index can turn a 5ms query into a 5-second full table scan. Query optimization starts with measuring, understanding execution plans, and applying targeted fixes.
+
+## EXPLAIN: Your Best Friend
+
+Before optimizing, understand what the database is doing.
+
+```sql
+EXPLAIN ANALYZE
+SELECT * FROM orders
+WHERE customer_id = 42
+AND status = 'pending'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+```
+Limit  (cost=0.43..12.85 rows=10)
+  -> Index Scan using idx_orders_customer_status on orders
+       Index Cond: (customer_id = 42 AND status = 'pending')
+       Rows Removed by Filter: 0
+       Actual Time: 0.052..0.089 ms
+```
+
+Key things to look for:
+- **Seq Scan** on large tables = missing index
+- **Rows Removed by Filter** = index isn't selective enough
+- **Sort** with high cost = missing index for ORDER BY
+- **Nested Loop** with large outer table = consider a different join strategy
+
+## Indexing Strategies
+
+### Single-Column Index
+
+```sql
+-- Before: Seq Scan (500ms on 10M rows)
+SELECT * FROM users WHERE email = 'alice@example.com';
+
+-- Add index
+CREATE INDEX idx_users_email ON users (email);
+
+-- After: Index Scan (0.1ms)
+```
+
+### Composite Index
+
+Column order matters. The index is used left-to-right.
+
+```sql
+-- This query needs both columns
+SELECT * FROM orders WHERE customer_id = 42 AND status = 'pending';
+
+-- Composite index (customer_id first, then status)
+CREATE INDEX idx_orders_customer_status ON orders (customer_id, status);
+
+-- This index also helps queries filtering only on customer_id
+-- But NOT queries filtering only on status
+```
+
+### Covering Index
+
+Include all columns the query needs so the database never reads the table.
+
+```sql
+-- Query only needs id and name
+SELECT id, name FROM products WHERE category = 'electronics';
+
+-- Covering index: includes the columns in the SELECT
+CREATE INDEX idx_products_category_covering ON products (category) INCLUDE (id, name);
+
+-- Result: Index Only Scan (no table access needed)
+```
+
+### Partial Index
+
+Index only the rows you actually query.
+
+```sql
+-- Most queries filter for active users
+CREATE INDEX idx_users_active ON users (email) WHERE active = true;
+
+-- Smaller index, faster lookups, less storage
+```
+
+## Common Anti-Patterns
+
+### N+1 Queries
+
+```python
+# ❌ N+1: 1 query for orders + N queries for customers
+orders = db.execute("SELECT * FROM orders LIMIT 100").fetchall()
+for order in orders:
+    customer = db.execute("SELECT * FROM customers WHERE id = %s", (order.customer_id,)).fetchone()
+
+# ✅ JOIN: 1 query total
+results = db.execute("""
+    SELECT o.*, c.name as customer_name
+    FROM orders o
+    JOIN customers c ON o.customer_id = c.id
+    LIMIT 100
+""").fetchall()
+```
+
+### SELECT *
+
+```sql
+-- ❌ Fetches all 50 columns, can't use covering index
+SELECT * FROM products WHERE category = 'electronics';
+
+-- ✅ Only fetch what you need
+SELECT id, name, price FROM products WHERE category = 'electronics';
+```
+
+### Functions on Indexed Columns
+
+```sql
+-- ❌ Index on created_at is useless here (function wraps the column)
+SELECT * FROM orders WHERE YEAR(created_at) = 2026;
+
+-- ✅ Use a range instead
+SELECT * FROM orders
+WHERE created_at >= '2026-01-01' AND created_at < '2027-01-01';
+```
+
+### Missing LIMIT on Large Result Sets
+
+```sql
+-- ❌ Returns potentially millions of rows
+SELECT * FROM logs WHERE level = 'ERROR';
+
+-- ✅ Paginate
+SELECT * FROM logs WHERE level = 'ERROR'
+ORDER BY created_at DESC
+LIMIT 50 OFFSET 0;
+```
+
+## Pagination Done Right
+
+Offset-based pagination degrades on later pages. Use cursor-based (keyset) pagination.
+
+```sql
+-- ❌ Offset: database still reads and discards 10,000 rows
+SELECT * FROM products ORDER BY id LIMIT 20 OFFSET 10000;
+
+-- ✅ Cursor: jumps directly to the right spot
+SELECT * FROM products WHERE id > 10000 ORDER BY id LIMIT 20;
+```
+
+## Common Pitfalls
+
+- **Over-indexing** -- Every index slows down writes (INSERT, UPDATE, DELETE). Only index columns you actually query.
+- **Ignoring query plans** -- Always use EXPLAIN before and after adding an index to verify improvement.
+- **Premature optimization** -- Profile first. Optimize the queries that actually appear in slow query logs.
+- **Not monitoring in production** -- Query performance depends on data size and distribution. What's fast with 1K rows may be slow with 10M.
+
+## Best Practices
+
+- Enable slow query logging and review it regularly
+- Use EXPLAIN ANALYZE to understand query execution
+- Add composite indexes that match your WHERE + ORDER BY patterns
+- Use cursor-based pagination for large datasets
+- Fetch only the columns you need
+- Monitor query performance as data grows

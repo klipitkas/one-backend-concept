@@ -1,0 +1,140 @@
+---
+title: "ACID vs BASE"
+slug: "2026-02-27-acid-vs-base"
+date: "2026-02-27"
+category: "Databases"
+difficulty: "Intermediate"
+tags: ["ACID", "BASE", "Databases", "Consistency", "Transactions"]
+description: "Understanding the two consistency models for databases -- when you need strict transactions and when eventual consistency is enough"
+---
+
+## Overview
+
+ACID and BASE represent two approaches to data consistency. ACID guarantees strict correctness -- every transaction is reliable and isolated. BASE trades immediate consistency for availability and performance. Choosing between them depends on what your application can tolerate: can you afford a brief window where data is stale, or must every read reflect the latest write?
+
+## ACID Properties
+
+**Atomicity** -- All operations in a transaction succeed or all fail. No partial updates.
+
+**Consistency** -- A transaction moves the database from one valid state to another. Constraints are always enforced.
+
+**Isolation** -- Concurrent transactions don't interfere with each other. Each sees a consistent snapshot.
+
+**Durability** -- Once committed, data survives crashes and power failures.
+
+```python
+# ACID transaction: transfer $100 from Alice to Bob
+def transfer(from_id, to_id, amount):
+    with db.transaction():
+        sender = db.execute(
+            "SELECT balance FROM accounts WHERE id = %s FOR UPDATE", (from_id,)
+        ).fetchone()
+
+        if sender.balance < amount:
+            raise InsufficientFunds()
+
+        db.execute("UPDATE accounts SET balance = balance - %s WHERE id = %s",
+                   (amount, from_id))
+        db.execute("UPDATE accounts SET balance = balance + %s WHERE id = %s",
+                   (amount, to_id))
+        # Both updates commit together, or neither does
+```
+
+## BASE Properties
+
+**Basically Available** -- The system always responds, even if data is stale.
+
+**Soft state** -- The system's state may change over time, even without input, as data propagates.
+
+**Eventually consistent** -- Given enough time without new updates, all nodes converge to the same state.
+
+```python
+# BASE example: user updates their profile
+def update_profile(user_id, data):
+    # Write to primary database
+    primary_db.execute("UPDATE users SET name = %s WHERE id = %s",
+                       (data["name"], user_id))
+
+    # Replicas will catch up eventually (async replication)
+    # A read from a replica might return stale data for a few milliseconds
+
+# Reading from a replica might return old data briefly
+def get_profile(user_id):
+    return replica_db.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
+```
+
+## When to Use ACID
+
+- **Financial transactions** -- Bank transfers, payments, billing
+- **Inventory management** -- Stock counts must be accurate to prevent overselling
+- **User authentication** -- Account creation, password changes
+- **Anything where incorrect data causes real harm**
+
+Databases: PostgreSQL, MySQL, SQL Server, Oracle
+
+## When to Use BASE
+
+- **Social media feeds** -- Seeing a post 2 seconds late is acceptable
+- **Analytics and counters** -- Page view counts don't need to be exact in real-time
+- **Product catalogs** -- A brief delay in price updates is tolerable
+- **Search indexes** -- Slightly stale search results are fine
+
+Databases: Cassandra, DynamoDB, MongoDB (by default), Redis
+
+## Isolation Levels (ACID Detail)
+
+SQL databases offer different isolation levels, trading consistency for performance.
+
+```sql
+-- Read Uncommitted: fastest, allows dirty reads
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+-- Read Committed: default in PostgreSQL, prevents dirty reads
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+-- Repeatable Read: prevents non-repeatable reads
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+-- Serializable: strictest, transactions behave as if they ran sequentially
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+```
+
+| Level | Dirty Read | Non-Repeatable Read | Phantom Read |
+|-------|-----------|-------------------|-------------|
+| Read Uncommitted | Yes | Yes | Yes |
+| Read Committed | No | Yes | Yes |
+| Repeatable Read | No | No | Yes (varies) |
+| Serializable | No | No | No |
+
+## Hybrid Approaches
+
+Most real systems use both models. Use ACID for critical data and BASE for everything else.
+
+```python
+# ACID: process the payment (must be correct)
+with db.transaction():
+    charge_customer(order)
+    update_inventory(order)
+
+# BASE: non-critical follow-up tasks (eventual consistency is fine)
+event_bus.publish("order.completed", order.id)
+# → async: send confirmation email
+# → async: update analytics
+# → async: update search index
+```
+
+## Common Pitfalls
+
+- **Using BASE where ACID is needed** -- Eventually consistent inventory leads to overselling.
+- **Using ACID everywhere** -- Serializable isolation on a read-heavy analytics query kills performance.
+- **Long-running transactions** -- Holding locks for seconds blocks other writers. Keep transactions short.
+- **Ignoring isolation levels** -- The default isolation level might not prevent the anomalies your app can't tolerate.
+
+## Best Practices
+
+- Default to ACID for writes that must be correct
+- Use BASE for read-heavy, latency-sensitive workloads where staleness is acceptable
+- Understand your database's default isolation level
+- Keep transactions as short as possible
+- Design async workflows with idempotency for BASE systems
+- Document which parts of your system are eventually consistent

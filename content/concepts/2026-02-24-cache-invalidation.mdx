@@ -1,0 +1,180 @@
+---
+title: "Cache Invalidation"
+slug: "2026-02-24-cache-invalidation"
+date: "2026-02-24"
+category: "Performance"
+difficulty: "Advanced"
+tags: ["Caching", "Cache Invalidation", "Performance", "Consistency"]
+description: "Strategies for keeping cached data fresh -- the famously hard problem in computer science"
+---
+
+## Overview
+
+Caching dramatically improves performance, but stale data can cause bugs, inconsistencies, and user confusion. Cache invalidation is the process of removing or updating cached data when the underlying data changes. Phil Karlton famously said there are only two hard things in computer science: cache invalidation and naming things.
+
+## Invalidation Strategies
+
+### Time-Based (TTL)
+
+The simplest approach: cached data expires after a fixed time.
+
+```python
+import redis
+
+cache = redis.Redis()
+
+def get_user_profile(user_id):
+    key = f"user:{user_id}"
+    cached = cache.get(key)
+    if cached:
+        return json.loads(cached)
+
+    profile = db.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
+    cache.setex(key, 300, json.dumps(profile))  # Expire after 5 minutes
+    return profile
+```
+
+**Pros:** Simple, self-healing (stale data eventually expires).
+**Cons:** Data can be stale for up to TTL seconds.
+
+### Event-Based (Write-Through)
+
+Invalidate or update the cache whenever the underlying data changes.
+
+```python
+def update_user_profile(user_id, data):
+    # Update the database
+    db.execute("UPDATE users SET name = %s, email = %s WHERE id = %s",
+               (data["name"], data["email"], user_id))
+
+    # Invalidate the cache
+    cache.delete(f"user:{user_id}")
+    # Or write-through: update cache immediately
+    # cache.setex(f"user:{user_id}", 300, json.dumps(data))
+```
+
+**Pros:** Data is always fresh.
+**Cons:** Every write path must know about the cache.
+
+### Publish-Subscribe
+
+Use database change events or message queues to trigger invalidation.
+
+```python
+# Publisher: emit event when data changes
+def update_product(product_id, data):
+    db.execute("UPDATE products SET price = %s WHERE id = %s",
+               (data["price"], product_id))
+    event_bus.publish("product.updated", {"product_id": product_id})
+
+# Subscriber: invalidate cache when event received
+def on_product_updated(event):
+    cache.delete(f"product:{event['product_id']}")
+    cache.delete("product_listing")  # Invalidate related caches too
+```
+
+## Cache-Aside vs Write-Through vs Write-Behind
+
+```
+Cache-Aside (Lazy Loading):
+  Read:  App → Cache (miss) → DB → Cache (populate)
+  Write: App → DB → Cache (invalidate)
+
+Write-Through:
+  Read:  App → Cache (miss) → DB → Cache (populate)
+  Write: App → Cache (update) → DB (synchronous)
+
+Write-Behind (Write-Back):
+  Read:  App → Cache (miss) → DB → Cache (populate)
+  Write: App → Cache (update) → DB (asynchronous, batched)
+```
+
+```python
+# Cache-aside pattern (most common)
+def get_product(product_id):
+    cached = cache.get(f"product:{product_id}")
+    if cached:
+        return json.loads(cached)
+
+    product = db.query("SELECT * FROM products WHERE id = %s", (product_id,))
+    cache.setex(f"product:{product_id}", 600, json.dumps(product))
+    return product
+
+def update_product(product_id, data):
+    db.execute("UPDATE products SET ... WHERE id = %s", (product_id,))
+    cache.delete(f"product:{product_id}")  # Delete, don't update -- avoids race conditions
+```
+
+## Stampede Prevention
+
+When a popular cache key expires, hundreds of requests simultaneously hit the database.
+
+```python
+import threading
+
+_locks = {}
+
+def get_with_lock(key, fetch_fn, ttl=300):
+    cached = cache.get(key)
+    if cached:
+        return json.loads(cached)
+
+    # Only one thread fetches from DB
+    lock = _locks.setdefault(key, threading.Lock())
+    if lock.acquire(timeout=5):
+        try:
+            # Double-check after acquiring lock
+            cached = cache.get(key)
+            if cached:
+                return json.loads(cached)
+
+            result = fetch_fn()
+            cache.setex(key, ttl, json.dumps(result))
+            return result
+        finally:
+            lock.release()
+    else:
+        # Couldn't acquire lock -- wait and retry from cache
+        time.sleep(0.5)
+        cached = cache.get(key)
+        return json.loads(cached) if cached else fetch_fn()
+```
+
+## Tag-Based Invalidation
+
+Group related cache entries with tags so you can invalidate them together.
+
+```python
+def cache_with_tags(key, value, tags, ttl=300):
+    cache.setex(key, ttl, json.dumps(value))
+    for tag in tags:
+        cache.sadd(f"tag:{tag}", key)
+
+def invalidate_tag(tag):
+    keys = cache.smembers(f"tag:{tag}")
+    if keys:
+        cache.delete(*keys)
+    cache.delete(f"tag:{tag}")
+
+# Usage
+cache_with_tags("product:42", product_data, ["products", "category:electronics"])
+cache_with_tags("product:43", product_data, ["products", "category:electronics"])
+
+# Invalidate all electronics products
+invalidate_tag("category:electronics")
+```
+
+## Common Pitfalls
+
+- **Updating cache instead of deleting** -- Between your DB write and cache update, another request can read stale data from DB and write it to cache. Delete the key and let the next read repopulate.
+- **Forgetting related caches** -- Updating a product's price? The product cache, category listing, search results, and cart totals might all be stale.
+- **No stampede protection** -- One expired key on a popular endpoint can bring down your database.
+- **Infinite TTL** -- If your invalidation logic has a bug, data stays stale forever. Always set a TTL as a safety net.
+
+## Best Practices
+
+- Use cache-aside with deletion (not update) as the default pattern
+- Always set a TTL, even with event-based invalidation (safety net)
+- Use tag-based invalidation for related data
+- Protect against stampedes on high-traffic keys
+- Monitor cache hit rates -- a sudden drop indicates an invalidation problem

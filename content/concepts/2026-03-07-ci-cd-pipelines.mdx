@@ -1,0 +1,195 @@
+---
+title: "CI/CD Pipelines"
+slug: "2026-03-07-ci-cd-pipelines"
+date: "2026-03-07"
+category: "Infrastructure"
+difficulty: "Beginner"
+tags: ["CI/CD", "Continuous Integration", "Continuous Deployment", "DevOps"]
+description: "How CI/CD pipelines automate testing, building, and deploying your code so you can ship with confidence"
+---
+
+## Overview
+
+CI/CD (Continuous Integration / Continuous Deployment) automates the path from code commit to production. CI runs your tests on every push. CD deploys the code automatically when tests pass. Together, they catch bugs early, reduce manual work, and make releases boring (which is exactly what you want).
+
+## Continuous Integration (CI)
+
+Every push triggers: lint, test, build. If anything fails, the commit is blocked.
+
+```yaml
+# .github/workflows/ci.yml (GitHub Actions)
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_PASSWORD: testpass
+        ports: ["5432:5432"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy src/
+
+      - name: Test
+        run: pytest --cov=src tests/
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/testdb
+
+      - name: Build
+        run: docker build -t myapp:${{ github.sha }} .
+```
+
+## Continuous Deployment (CD)
+
+After CI passes on main, deploy automatically.
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    # ... same CI steps ...
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t registry.example.com/myapp:${{ github.sha }} .
+          docker push registry.example.com/myapp:${{ github.sha }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/api-deployment \
+            api=registry.example.com/myapp:${{ github.sha }}
+          kubectl rollout status deployment/api-deployment --timeout=300s
+```
+
+## Pipeline Stages
+
+A typical pipeline flows through these stages:
+
+```
+Commit → Lint → Test → Build → Deploy to Staging → Integration Tests → Deploy to Production
+         ↓      ↓      ↓                ↓                                      ↓
+       Fast   Unit   Docker          Smoke tests                          Canary/Rolling
+      checks  tests  image           against staging                        deployment
+```
+
+## Testing in CI
+
+```yaml
+# Run different test types
+- name: Unit tests (fast, isolated)
+  run: pytest tests/unit/ -x --timeout=30
+
+- name: Integration tests (slower, with dependencies)
+  run: pytest tests/integration/ --timeout=120
+
+- name: Security scan
+  run: trivy image myapp:${{ github.sha }}
+
+- name: License check
+  run: pip-licenses --fail-on="GPL"
+```
+
+## Deployment Strategies in CD
+
+### Rolling Update
+
+Replace instances gradually. Zero downtime if health checks are configured.
+
+```yaml
+# Kubernetes handles this by default
+kubectl set image deployment/api api=myapp:v2
+# Pods are replaced one by one
+```
+
+### Canary Deployment
+
+Route a small percentage of traffic to the new version first.
+
+```yaml
+# Deploy canary with 1 replica alongside 9 stable replicas
+# Monitor error rates before scaling up
+kubectl scale deployment/api-canary --replicas=1
+# If healthy, promote canary to stable
+```
+
+### Blue-Green Deployment
+
+Run two identical environments. Switch traffic from blue (current) to green (new).
+
+```bash
+# Green environment is ready and tested
+# Switch the service to point to green
+kubectl patch service api -p '{"spec":{"selector":{"version":"green"}}}'
+# If something goes wrong, switch back to blue instantly
+```
+
+## Caching for Speed
+
+```yaml
+# Cache dependencies to speed up CI
+- name: Cache pip packages
+  uses: actions/cache@v4
+  with:
+    path: ~/.cache/pip
+    key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+    restore-keys: ${{ runner.os }}-pip-
+
+- name: Cache Docker layers
+  uses: actions/cache@v4
+  with:
+    path: /tmp/.buildx-cache
+    key: ${{ runner.os }}-buildx-${{ github.sha }}
+    restore-keys: ${{ runner.os }}-buildx-
+```
+
+## Common Pitfalls
+
+- **Slow CI pipelines** -- If CI takes 30 minutes, developers stop waiting for it and merge broken code. Optimize with caching, parallelism, and fast test suites.
+- **No staging environment** -- Deploying directly from CI to production without a staging step catches fewer bugs.
+- **Flaky tests** -- Tests that randomly fail erode trust in CI. Fix or quarantine them immediately.
+- **Manual deployment steps** -- If deploying requires someone to SSH into a server, it's not CD. Automate everything.
+
+## Best Practices
+
+- Run CI on every pull request -- never merge without green checks
+- Keep CI under 10 minutes (use caching and parallel jobs)
+- Use the same Docker image in staging and production
+- Tag every deployment with the git SHA for traceability
+- Set up rollback automation for failed deployments
+- Store secrets in CI/CD secrets management, never in code

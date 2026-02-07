@@ -1,0 +1,143 @@
+---
+title: "SQL vs NoSQL"
+slug: "2026-02-28-sql-vs-nosql"
+date: "2026-02-28"
+category: "Databases"
+difficulty: "Beginner"
+tags: ["SQL", "NoSQL", "Databases", "Data Modeling"]
+description: "When to choose relational databases vs document stores, key-value stores, and other NoSQL options"
+---
+
+## Overview
+
+SQL databases (PostgreSQL, MySQL) store data in tables with predefined schemas and use SQL for queries. NoSQL databases (MongoDB, DynamoDB, Cassandra) offer flexible schemas and different data models optimized for specific access patterns. The choice isn't about which is "better" -- it's about which fits your data and access patterns.
+
+## Database Categories
+
+### Relational (SQL)
+
+Tables with rows and columns, relationships via foreign keys, queried with SQL.
+
+```sql
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL
+);
+
+CREATE TABLE orders (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    total DECIMAL(10, 2),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Powerful queries with JOINs
+SELECT u.name, COUNT(o.id) as order_count, SUM(o.total) as total_spent
+FROM users u
+JOIN orders o ON u.id = o.user_id
+GROUP BY u.id
+HAVING SUM(o.total) > 1000;
+```
+
+**Examples:** PostgreSQL, MySQL, SQLite
+
+### Document Store
+
+JSON-like documents with flexible schemas. Each document can have different fields.
+
+```javascript
+// MongoDB: no predefined schema
+db.users.insertOne({
+  name: "Alice",
+  email: "alice@example.com",
+  preferences: { theme: "dark", language: "en" },
+  addresses: [
+    { type: "home", city: "Portland" },
+    { type: "work", city: "Seattle" },
+  ],
+});
+
+// Query nested data directly
+db.users.find({ "addresses.city": "Portland" });
+```
+
+**Examples:** MongoDB, CouchDB, Firestore
+
+### Key-Value Store
+
+Simple key-to-value mapping. Extremely fast for lookups by key.
+
+```python
+# Redis
+redis.set("session:abc123", json.dumps({"user_id": 42, "role": "admin"}))
+redis.get("session:abc123")
+
+# DynamoDB
+table.put_item(Item={"pk": "USER#42", "sk": "PROFILE", "name": "Alice"})
+table.get_item(Key={"pk": "USER#42", "sk": "PROFILE"})
+```
+
+**Examples:** Redis, DynamoDB, etcd
+
+### Wide-Column Store
+
+Rows with dynamic columns, optimized for writes and time-series data.
+
+```cql
+-- Cassandra: designed for high write throughput
+CREATE TABLE events (
+    sensor_id TEXT,
+    event_time TIMESTAMP,
+    temperature DOUBLE,
+    humidity DOUBLE,
+    PRIMARY KEY (sensor_id, event_time)
+) WITH CLUSTERING ORDER BY (event_time DESC);
+
+-- Fast: query by partition key
+SELECT * FROM events WHERE sensor_id = 'sensor-42' LIMIT 100;
+```
+
+**Examples:** Cassandra, ScyllaDB, HBase
+
+## When to Choose SQL
+
+- **Complex queries** -- JOINs, aggregations, subqueries, window functions
+- **Data integrity matters** -- Foreign keys, constraints, transactions
+- **Data relationships are central** -- Users have orders, orders have items, items have reviews
+- **Schema is well-defined** -- You know your data shape upfront
+- **Ad-hoc reporting** -- Business analysts need to write arbitrary queries
+
+## When to Choose NoSQL
+
+- **Flexible or evolving schema** -- Each record might have different fields
+- **Massive write throughput** -- IoT sensor data, event logging
+- **Simple access patterns** -- Lookup by key, no complex joins needed
+- **Horizontal scaling** -- Need to shard across many nodes easily
+- **Denormalized data** -- You're okay duplicating data for read performance
+
+## The Hybrid Approach
+
+Most production systems use multiple databases, each for what it does best.
+
+```
+PostgreSQL  → Users, orders, payments (relational, ACID)
+Redis       → Sessions, caching, rate limiting (fast key-value)
+Elasticsearch → Full-text search, log analysis (search engine)
+S3          → File storage (object store)
+```
+
+## Common Pitfalls
+
+- **Choosing NoSQL to avoid learning SQL** -- SQL is a fundamental skill. Don't avoid it because of unfamiliarity.
+- **Using MongoDB for highly relational data** -- If you're constantly doing manual "joins" in application code, use a relational database.
+- **Assuming NoSQL scales and SQL doesn't** -- PostgreSQL handles millions of rows with proper indexing. Don't prematurely optimize.
+- **Schemaless doesn't mean no schema** -- Your application code still expects certain fields. You've just moved the schema from the database to your code.
+
+## Best Practices
+
+- Start with PostgreSQL unless you have a specific reason not to
+- Use the right database for the right job (polyglot persistence)
+- Consider your query patterns first, then choose the database
+- Don't normalize NoSQL data -- denormalize for your read patterns
+- Plan for data migration -- your choice isn't permanent

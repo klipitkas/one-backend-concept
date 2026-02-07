@@ -1,0 +1,130 @@
+---
+title: "API Gateway"
+slug: "2026-02-08-api-gateway"
+date: "2026-02-08"
+category: "Infrastructure"
+difficulty: "Intermediate"
+tags: ["API Gateway", "Microservices", "Routing", "Infrastructure"]
+description: "How API gateways act as a single entry point for your microservices, handling routing, authentication, and rate limiting"
+---
+
+## Overview
+
+An API gateway sits between clients and your backend services. Instead of clients calling each microservice directly, every request flows through the gateway first. It routes requests to the correct service while handling cross-cutting concerns like authentication, rate limiting, and logging.
+
+Think of it as the front door to your backend. The client knows one address, and the gateway figures out where to send each request.
+
+```
+Client Request
+      |
+      v
+ [ API Gateway ]
+   /     |     \
+  v      v      v
+Users  Orders  Products
+```
+
+## Core Responsibilities
+
+### Request Routing
+
+The gateway inspects incoming requests and forwards them to the correct backend service.
+
+```nginx
+# NGINX as a simple API gateway
+upstream users_service {
+    server users-svc:3001;
+}
+
+upstream orders_service {
+    server orders-svc:4001;
+}
+
+server {
+    listen 80;
+
+    location /api/users/ {
+        proxy_pass http://users_service;
+        proxy_set_header X-Request-ID $request_id;
+    }
+
+    location /api/orders/ {
+        proxy_pass http://orders_service;
+        proxy_set_header X-Request-ID $request_id;
+    }
+}
+```
+
+### Authentication at the Edge
+
+Instead of each service verifying tokens independently, the gateway handles it once.
+
+```javascript
+// Express.js gateway auth middleware
+const jwt = require("jsonwebtoken");
+
+function authMiddleware(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Missing token" });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.headers["x-user-id"] = decoded.userId;
+    req.headers["x-user-role"] = decoded.role;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+app.use("/api", authMiddleware);
+```
+
+Downstream services trust the gateway and simply read the `x-user-id` header.
+
+### API Composition
+
+The gateway can aggregate data from multiple services into a single response, reducing client-side complexity.
+
+```javascript
+app.get("/api/dashboard", async (req, res) => {
+  const userId = req.headers["x-user-id"];
+
+  const [user, orders, stats] = await Promise.all([
+    fetch(`http://users-svc:3001/user/${userId}`).then(r => r.json()),
+    fetch(`http://orders-svc:4001/orders?userId=${userId}&limit=5`).then(r => r.json()),
+    fetch(`http://analytics-svc:5001/stats/${userId}`).then(r => r.json()),
+  ]);
+
+  res.json({
+    user: { name: user.name, email: user.email },
+    recentOrders: orders,
+    stats: { totalSpent: stats.totalSpent },
+  });
+});
+```
+
+## Popular API Gateway Solutions
+
+| Gateway | Type | Best For |
+|---------|------|----------|
+| **Kong** | Self-hosted / Cloud | Plugin ecosystem, Lua extensibility |
+| **AWS API Gateway** | Managed | Serverless backends, Lambda integration |
+| **NGINX** | Self-hosted | High performance, static routing |
+| **Traefik** | Self-hosted | Container-native, auto service discovery |
+| **Envoy** | Self-hosted | Service mesh, gRPC support |
+
+## Common Pitfalls
+
+- **Single point of failure** -- If the gateway goes down, everything goes down. Always deploy multiple instances behind a load balancer.
+- **Gateway becoming a monolith** -- Keep business logic out of the gateway. It should handle routing, auth, and rate limiting only.
+- **Ignoring timeouts** -- Always set timeouts on upstream requests. A slow service should not block the gateway indefinitely.
+- **Excessive latency** -- Each middleware layer adds latency. Profile your gateway and remove unnecessary transformations.
+
+## Best Practices
+
+- **Keep it thin** -- Cross-cutting concerns only, no business logic
+- **Centralize logging and tracing** -- Generate a request ID at the gateway and pass it downstream
+- **Use circuit breakers** -- Stop sending traffic to failing services temporarily
+- **Monitor gateway metrics** -- Track request rates, error rates, and latency percentiles (p50, p95, p99)
+- **Version your APIs** -- The gateway is the ideal place to manage `/v1/` vs `/v2/` routing

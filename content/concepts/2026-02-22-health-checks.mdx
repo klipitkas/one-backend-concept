@@ -1,0 +1,113 @@
+---
+title: "Health Checks"
+slug: "2026-02-22-health-checks"
+date: "2026-02-22"
+category: "Reliability"
+difficulty: "Beginner"
+tags: ["Health Checks", "Monitoring", "Reliability", "DevOps"]
+description: "Implementing liveness and readiness health checks to enable reliable deployments and automatic recovery"
+---
+
+## Overview
+
+A health check is an endpoint that reports whether your application is functioning correctly. They're used by load balancers to route traffic, by Kubernetes to restart broken containers, and by deployment pipelines to verify new releases.
+
+## Liveness vs Readiness
+
+**Liveness: "Is the process alive?"** -- If this fails, restart the process. A deadlocked or stuck process fails liveness.
+
+**Readiness: "Can it serve traffic?"** -- If this fails, stop sending requests. An app still loading its cache is alive but not ready.
+
+```python
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route("/healthz")
+def liveness():
+    return jsonify({"status": "ok"}), 200
+
+@app.route("/readyz")
+def readiness():
+    checks = {
+        "database": check_database(),
+        "cache": check_cache(),
+    }
+    healthy = all(checks.values())
+    return jsonify({"status": "ready" if healthy else "not_ready", "checks": checks}), 200 if healthy else 503
+
+def check_database():
+    try:
+        db.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+def check_cache():
+    try:
+        redis_client.ping()
+        return True
+    except Exception:
+        return False
+```
+
+## Kubernetes Configuration
+
+```yaml
+containers:
+  - name: api
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 15
+      failureThreshold: 3     # Restart after 3 failures
+
+    readinessProbe:
+      httpGet:
+        path: /readyz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      failureThreshold: 2     # Remove from service after 2 failures
+```
+
+## Graceful Shutdown
+
+Health checks and graceful shutdown work together:
+
+```python
+import signal
+
+shutting_down = False
+
+def handle_shutdown(signum, frame):
+    global shutting_down
+    shutting_down = True
+    time.sleep(5)  # Let load balancer notice
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, handle_shutdown)
+
+@app.route("/healthz")
+def liveness():
+    if shutting_down:
+        return jsonify({"status": "shutting_down"}), 503
+    return jsonify({"status": "ok"}), 200
+```
+
+## Common Pitfalls
+
+- **Liveness checks that test dependencies** -- If liveness calls the database and it's down, Kubernetes restarts all pods. Restarting doesn't fix the database. Use readiness for dependency checks.
+- **Health checks that do real work** -- Use lightweight checks: `SELECT 1`, `PING`.
+- **No timeouts** -- A check that hangs on a dead connection never returns unhealthy.
+- **Missing health checks entirely** -- The single biggest operational improvement for minimal effort.
+
+## Best Practices
+
+- Keep liveness trivial -- just "can this process respond?"
+- Make readiness comprehensive but fast
+- Separate endpoints: `/healthz` for liveness, `/readyz` for readiness
+- Include response times in health check output for observability
+- Wire health checks into your deployment pipeline

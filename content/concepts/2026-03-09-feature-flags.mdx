@@ -1,0 +1,186 @@
+---
+title: "Feature Flags"
+slug: "2026-03-09-feature-flags"
+date: "2026-03-09"
+category: "Infrastructure"
+difficulty: "Beginner"
+tags: ["Feature Flags", "Deployments", "Risk Management", "Configuration"]
+description: "How feature flags decouple deployment from release, letting you ship code safely and control who sees new features"
+---
+
+## Overview
+
+Feature flags (also called feature toggles) let you turn features on and off without deploying new code. Deploy the code with the feature behind a flag, then enable it for specific users, a percentage of traffic, or everyone -- all through configuration. If something breaks, flip the flag off instead of rolling back the deployment.
+
+## Basic Implementation
+
+```python
+# Simple in-memory feature flags
+FEATURE_FLAGS = {
+    "new_checkout_flow": False,
+    "dark_mode": True,
+    "ai_recommendations": False,
+}
+
+def is_enabled(flag_name, user=None):
+    return FEATURE_FLAGS.get(flag_name, False)
+
+# Usage in code
+@app.route("/api/checkout", methods=["POST"])
+def checkout():
+    if is_enabled("new_checkout_flow"):
+        return new_checkout(request.json)
+    return legacy_checkout(request.json)
+```
+
+## Percentage-Based Rollout
+
+Release to a percentage of users to catch issues before full rollout.
+
+```python
+import hashlib
+
+FLAG_CONFIG = {
+    "new_checkout_flow": {
+        "enabled": True,
+        "percentage": 10,  # 10% of users
+    },
+    "ai_recommendations": {
+        "enabled": True,
+        "percentage": 50,  # 50% of users
+    },
+}
+
+def is_enabled(flag_name, user_id=None):
+    config = FLAG_CONFIG.get(flag_name)
+    if not config or not config["enabled"]:
+        return False
+
+    if user_id is None:
+        return False
+
+    # Deterministic: same user always gets the same result
+    hash_val = int(hashlib.md5(f"{flag_name}:{user_id}".encode()).hexdigest(), 16)
+    return (hash_val % 100) < config["percentage"]
+
+# User 42 will consistently see (or not see) the feature
+is_enabled("new_checkout_flow", user_id=42)  # Always the same result
+```
+
+## User-Targeted Flags
+
+Enable features for specific user segments.
+
+```python
+FLAG_CONFIG = {
+    "beta_dashboard": {
+        "enabled": True,
+        "allowed_users": [1, 2, 42],     # Specific users
+        "allowed_roles": ["beta_tester"],  # User roles
+        "percentage": 0,                   # Not rolled out generally
+    },
+}
+
+def is_enabled(flag_name, user=None):
+    config = FLAG_CONFIG.get(flag_name)
+    if not config or not config["enabled"]:
+        return False
+
+    if user:
+        if user.id in config.get("allowed_users", []):
+            return True
+        if user.role in config.get("allowed_roles", []):
+            return True
+
+    if config.get("percentage", 0) > 0 and user:
+        hash_val = int(hashlib.md5(f"{flag_name}:{user.id}".encode()).hexdigest(), 16)
+        return (hash_val % 100) < config["percentage"]
+
+    return False
+```
+
+## Database-Backed Flags
+
+Store flags in the database for runtime updates without redeployment.
+
+```python
+from functools import lru_cache
+import time
+
+# Cache flags for 30 seconds to avoid hitting DB on every request
+@lru_cache(maxsize=1)
+def _get_flags(cache_key):
+    rows = db.execute("SELECT name, enabled, percentage, config FROM feature_flags").fetchall()
+    return {row.name: {"enabled": row.enabled, "percentage": row.percentage, "config": json.loads(row.config or "{}")} for row in rows}
+
+def get_flags():
+    # Cache busts every 30 seconds
+    cache_key = int(time.time() / 30)
+    return _get_flags(cache_key)
+
+def is_enabled(flag_name, user_id=None):
+    flags = get_flags()
+    config = flags.get(flag_name)
+    if not config or not config["enabled"]:
+        return False
+    if config["percentage"] == 100:
+        return True
+    if user_id and config["percentage"] > 0:
+        hash_val = int(hashlib.md5(f"{flag_name}:{user_id}".encode()).hexdigest(), 16)
+        return (hash_val % 100) < config["percentage"]
+    return False
+```
+
+```sql
+CREATE TABLE feature_flags (
+    name VARCHAR(255) PRIMARY KEY,
+    enabled BOOLEAN DEFAULT false,
+    percentage INTEGER DEFAULT 0,
+    config JSONB DEFAULT '{}',
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Enable for 25% of users
+UPDATE feature_flags SET enabled = true, percentage = 25 WHERE name = 'new_checkout_flow';
+
+-- Full rollout
+UPDATE feature_flags SET percentage = 100 WHERE name = 'new_checkout_flow';
+
+-- Kill switch: disable immediately
+UPDATE feature_flags SET enabled = false WHERE name = 'new_checkout_flow';
+```
+
+## Gradual Rollout Strategy
+
+```
+Day 1:  Enable for internal team (allowed_users)
+Day 2:  Enable for beta testers (allowed_roles)
+Day 3:  Rollout to 5% of users
+Day 5:  Rollout to 25% (monitor error rates)
+Day 7:  Rollout to 50%
+Day 10: Rollout to 100%
+Day 14: Remove the flag and dead code
+```
+
+## Flag Types
+
+- **Release flags** -- Temporary. Deploy code behind a flag, roll out gradually, remove the flag once fully released.
+- **Experiment flags** -- A/B testing. Show different variants to different users and measure outcomes.
+- **Ops flags** -- Kill switches. Disable expensive features under heavy load.
+- **Permission flags** -- Long-lived. Gate features by user plan or role (free vs premium).
+
+## Common Pitfalls
+
+- **Never cleaning up flags** -- Old flags accumulate and make code unreadable. Set a removal date when you create the flag.
+- **Testing only the "on" path** -- Both paths (flag on and flag off) need tests. A bug in the fallback path will hit 100% of users when you disable the flag.
+- **Flags that affect too much** -- A flag that changes behavior in 20 places is hard to reason about. Keep flags focused.
+- **No audit trail** -- Track who changed which flag and when. Flag changes are deployment-equivalent events.
+
+## Best Practices
+
+- Clean up release flags within 2 weeks of full rollout
+- Test both paths (enabled and disabled) for every flag
+- Use deterministic hashing so users get a consistent experience
+- Monitor metrics per flag state (error rate with flag on vs off)
+- Maintain a flag inventory with owners and expiration dates
+- Start rollouts at low percentages and increase gradually

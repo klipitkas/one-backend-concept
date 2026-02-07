@@ -1,0 +1,191 @@
+---
+title: "Metrics and Monitoring"
+slug: "2026-03-05-metrics-and-monitoring"
+date: "2026-03-05"
+category: "Observability"
+difficulty: "Beginner"
+tags: ["Metrics", "Monitoring", "Observability", "Prometheus"]
+description: "What to measure in your backend systems and how to set up meaningful dashboards and alerts"
+---
+
+## Overview
+
+Metrics are numerical measurements collected over time. They tell you how your system is performing right now, how it performed yesterday, and whether things are trending in the right direction. Unlike logs (which tell you what happened), metrics tell you how much and how fast.
+
+## The Four Golden Signals
+
+Google's SRE book identifies four signals every service should measure:
+
+```
+1. Latency:    How long requests take (p50, p95, p99)
+2. Traffic:    How many requests per second
+3. Errors:     What percentage of requests fail
+4. Saturation: How full are your resources (CPU, memory, disk, connections)
+```
+
+## Metric Types
+
+### Counter
+
+A value that only goes up. Resets to zero on restart.
+
+```python
+from prometheus_client import Counter
+
+requests_total = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    ["method", "endpoint", "status"],
+)
+
+@app.after_request
+def track_request(response):
+    requests_total.labels(
+        method=request.method,
+        endpoint=request.path,
+        status=response.status_code,
+    ).inc()
+    return response
+
+# Query: rate(http_requests_total[5m])  → requests per second
+# Query: http_requests_total{status="500"} → total 500 errors
+```
+
+### Histogram
+
+Tracks the distribution of values (e.g., request duration).
+
+```python
+from prometheus_client import Histogram
+
+request_duration = Histogram(
+    "http_request_duration_seconds",
+    "Request duration in seconds",
+    ["method", "endpoint"],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
+)
+
+@app.before_request
+def start_timer():
+    g.start_time = time.time()
+
+@app.after_request
+def observe_duration(response):
+    duration = time.time() - g.start_time
+    request_duration.labels(
+        method=request.method,
+        endpoint=request.path,
+    ).observe(duration)
+    return response
+
+# Query: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+# → 95th percentile latency
+```
+
+### Gauge
+
+A value that can go up or down. Represents current state.
+
+```python
+from prometheus_client import Gauge
+
+active_connections = Gauge(
+    "active_connections",
+    "Number of active connections",
+)
+
+queue_depth = Gauge(
+    "job_queue_depth",
+    "Number of jobs waiting in queue",
+    ["queue_name"],
+)
+
+# Set current value
+active_connections.inc()   # Connection opened
+active_connections.dec()   # Connection closed
+queue_depth.labels(queue_name="emails").set(42)
+```
+
+## RED and USE Methods
+
+### RED Method (for services)
+
+```
+Rate:     Requests per second
+Errors:   Failed requests per second
+Duration: Time per request (histogram)
+```
+
+### USE Method (for resources)
+
+```
+Utilization: % of time the resource is busy (CPU usage)
+Saturation:  Amount of queued work (run queue length)
+Errors:      Error count (disk errors, network errors)
+```
+
+## Prometheus + Grafana Setup
+
+```python
+# Flask app with Prometheus metrics endpoint
+from prometheus_client import make_wsgi_app
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+
+# Expose /metrics endpoint for Prometheus to scrape
+app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {
+    "/metrics": make_wsgi_app(),
+})
+```
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: "api"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["api-server:8080"]
+```
+
+## Alerting Rules
+
+Alert on symptoms (user impact), not causes.
+
+```yaml
+# Prometheus alerting rules
+groups:
+  - name: api_alerts
+    rules:
+      # Alert on high error rate (symptom)
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error rate above 5% for 5 minutes"
+
+      # Alert on high latency (symptom)
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "95th percentile latency above 1 second"
+```
+
+## Common Pitfalls
+
+- **Alerting on causes instead of symptoms** -- "CPU is at 80%" isn't a problem unless it affects users. Alert on latency and error rates instead.
+- **Too many alerts** -- Alert fatigue leads to ignoring real problems. Every alert should be actionable.
+- **Averaging latency** -- Averages hide tail latency. Use percentiles (p95, p99) instead.
+- **No baseline** -- Without knowing what "normal" looks like, you can't detect anomalies. Collect metrics before you need them.
+
+## Best Practices
+
+- Instrument the four golden signals for every service
+- Use histograms for latency, not averages
+- Set up dashboards before incidents happen
+- Alert on symptoms (error rate, latency) not causes (CPU, memory)
+- Keep alert noise low -- every alert should require human action
+- Track business metrics alongside technical metrics (orders/minute, signups/day)

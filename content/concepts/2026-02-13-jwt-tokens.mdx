@@ -1,0 +1,121 @@
+---
+title: "JWT Tokens"
+slug: "2026-02-13-jwt-tokens"
+date: "2026-02-13"
+category: "Security"
+difficulty: "Beginner"
+tags: ["JWT", "Authentication", "Tokens", "Security"]
+description: "How JSON Web Tokens work for stateless authentication and what to watch out for when using them"
+---
+
+## Overview
+
+A JSON Web Token (JWT) is a compact, self-contained token that carries claims (data) between parties. In backend systems, JWTs are most commonly used for authentication: after a user logs in, the server issues a JWT that the client sends with every subsequent request.
+
+The "self-contained" part is key. A JWT carries the user's identity and permissions inside the token itself, so the server doesn't need to look anything up in a database to verify who the user is.
+
+## Structure
+
+A JWT has three parts separated by dots: `header.payload.signature`
+
+```
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyXzEyMyIsImVtYWlsIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3Mzg5NDQwMDB9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+```
+
+Each part is Base64URL-encoded JSON:
+
+**Header:** Algorithm and token type
+```json
+{ "alg": "HS256", "typ": "JWT" }
+```
+
+**Payload:** Claims (user data)
+```json
+{ "sub": "user_123", "email": "alice@example.com", "role": "admin", "exp": 1738944000 }
+```
+
+**Signature:** Ensures the token hasn't been tampered with
+```
+HMACSHA256(base64UrlEncode(header) + "." + base64UrlEncode(payload), secret)
+```
+
+## Implementation
+
+```javascript
+const jwt = require("jsonwebtoken");
+const SECRET = process.env.JWT_SECRET;
+
+// Issue tokens at login
+function login(req, res) {
+  const user = authenticateUser(req.body.email, req.body.password);
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
+
+  const accessToken = jwt.sign(
+    { sub: user.id, email: user.email, role: user.role },
+    SECRET,
+    { expiresIn: "15m" }
+  );
+
+  const refreshToken = jwt.sign(
+    { sub: user.id, type: "refresh" },
+    SECRET,
+    { expiresIn: "7d" }
+  );
+
+  res.json({ accessToken, refreshToken });
+}
+
+// Verify tokens on protected routes
+function authenticate(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Missing token" });
+
+  try {
+    req.user = jwt.verify(token, SECRET);
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: err.name === "TokenExpiredError" ? "Token expired" : "Invalid token" });
+  }
+}
+
+app.get("/api/profile", authenticate, (req, res) => {
+  res.json({ userId: req.user.sub, email: req.user.email });
+});
+```
+
+## Access Tokens vs Refresh Tokens
+
+Short-lived access tokens (15 min) limit damage if stolen. Refresh tokens (7 days) avoid forcing users to log in constantly.
+
+```
+1. Login → access token (15 min) + refresh token (7 days)
+2. Use access token for API calls
+3. When access token expires → send refresh token to /refresh
+4. Server issues new access token
+5. When refresh token expires → user must log in again
+```
+
+Store refresh tokens in the database so you can revoke them.
+
+## Symmetric vs Asymmetric Signing
+
+**HS256 (symmetric):** One shared secret for signing and verification. Simple, but every service needs the secret.
+
+**RS256 (asymmetric):** Private key signs, public key verifies. Only the auth service needs the private key. Better for microservices.
+
+## Common Pitfalls
+
+- **Storing JWTs in localStorage** -- XSS can steal them. Use `httpOnly`, `Secure`, `SameSite` cookies instead.
+- **No expiration or long expiration** -- JWTs can't be revoked. A stolen 30-day token means 30 days of unauthorized access.
+- **Sensitive data in the payload** -- The payload is Base64-encoded, not encrypted. Anyone can decode it.
+- **Using the `none` algorithm** -- Always explicitly specify accepted algorithms when verifying.
+- **Huge payloads** -- Every request carries the full token. Keep claims minimal.
+
+## Best Practices
+
+- Keep access tokens short-lived (15 minutes)
+- Use RS256 in microservice architectures
+- Always validate `exp`, `iss`, and `aud` claims
+- Store refresh tokens in the database for revocation
+- Rotate signing keys periodically using the `kid` header
+- Use HTTPS exclusively to prevent token interception

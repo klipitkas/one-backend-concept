@@ -1,0 +1,160 @@
+---
+title: "Redis Deep Dive"
+slug: "2026-02-25-redis-deep-dive"
+date: "2026-02-25"
+category: "Databases"
+difficulty: "Intermediate"
+tags: ["Redis", "Caching", "Data Structures", "In-Memory"]
+description: "Understanding Redis beyond simple key-value caching -- its data structures, use cases, and operational patterns"
+---
+
+## Overview
+
+Redis is an in-memory data structure store used as a cache, message broker, and database. While most people know it for basic key-value caching, Redis supports rich data structures that solve common backend problems elegantly. Its single-threaded event loop processes commands in microseconds.
+
+## Core Data Structures
+
+### Strings
+
+The simplest type. Used for caching, counters, and simple values.
+
+```redis
+SET user:42:name "Alice"
+GET user:42:name                   # "Alice"
+INCR page:views                    # Atomic counter
+SETEX session:abc123 3600 "data"   # Expires in 1 hour
+```
+
+### Hashes
+
+A map of field-value pairs. Perfect for objects.
+
+```redis
+HSET user:42 name "Alice" email "alice@example.com" role "admin"
+HGET user:42 name                  # "Alice"
+HGETALL user:42                    # All fields and values
+HINCRBY user:42 login_count 1      # Increment a single field
+```
+
+### Lists
+
+Ordered collections. Great for queues and activity feeds.
+
+```redis
+LPUSH notifications:42 "New order received"
+LPUSH notifications:42 "Payment confirmed"
+LRANGE notifications:42 0 9       # Latest 10 notifications
+BRPOP task_queue 30               # Blocking pop (simple job queue)
+```
+
+### Sets
+
+Unique unordered collections. Useful for tags, unique visitors, and set operations.
+
+```redis
+SADD product:42:tags "electronics" "sale" "featured"
+SISMEMBER product:42:tags "sale"   # 1 (true)
+SINTER product:42:tags product:43:tags  # Tags in common
+```
+
+### Sorted Sets
+
+Like sets, but each member has a score. Perfect for leaderboards and time-based data.
+
+```redis
+ZADD leaderboard 1500 "alice" 1200 "bob" 1800 "charlie"
+ZREVRANGE leaderboard 0 9         # Top 10 players
+ZRANK leaderboard "alice"         # Alice's rank
+ZINCRBY leaderboard 50 "alice"    # Add 50 points
+```
+
+## Common Use Cases
+
+### Rate Limiting
+
+```python
+def is_rate_limited(user_id, limit=100, window=60):
+    key = f"ratelimit:{user_id}"
+    current = redis.incr(key)
+    if current == 1:
+        redis.expire(key, window)
+    return current > limit
+```
+
+### Distributed Locking
+
+```python
+import uuid
+
+def acquire_lock(resource, timeout=10):
+    lock_id = str(uuid.uuid4())
+    acquired = redis.set(f"lock:{resource}", lock_id, nx=True, ex=timeout)
+    return lock_id if acquired else None
+
+def release_lock(resource, lock_id):
+    # Only release if we own the lock (Lua script for atomicity)
+    script = """
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+    """
+    redis.eval(script, 1, f"lock:{resource}", lock_id)
+```
+
+### Session Store
+
+```python
+def create_session(user_id, data):
+    session_id = str(uuid.uuid4())
+    redis.setex(f"session:{session_id}", 86400, json.dumps({
+        "user_id": user_id,
+        **data,
+    }))
+    return session_id
+
+def get_session(session_id):
+    data = redis.get(f"session:{session_id}")
+    return json.loads(data) if data else None
+```
+
+### Pub/Sub for Real-Time Events
+
+```python
+# Publisher
+redis.publish("order_events", json.dumps({
+    "type": "order.created",
+    "order_id": 42,
+}))
+
+# Subscriber
+pubsub = redis.pubsub()
+pubsub.subscribe("order_events")
+for message in pubsub.listen():
+    if message["type"] == "message":
+        event = json.loads(message["data"])
+        handle_event(event)
+```
+
+## Persistence Options
+
+- **RDB (snapshotting)** -- Periodic point-in-time snapshots. Fast restarts, but you lose data since the last snapshot.
+- **AOF (append-only file)** -- Logs every write. More durable but larger files and slower restarts.
+- **RDB + AOF** -- Use both for the best combination of speed and durability.
+
+## Common Pitfalls
+
+- **Using Redis as the primary database** -- Redis is volatile by design. Use it as a cache or secondary store, with a durable database as the source of truth.
+- **Storing large values** -- Redis is fast because data fits in memory. Storing 10MB blobs defeats the purpose.
+- **No eviction policy** -- When Redis runs out of memory, it can reject writes. Configure `maxmemory-policy` (e.g., `allkeys-lru`).
+- **Key naming without structure** -- Use a consistent naming convention like `type:id:field` for manageability.
+
+## Best Practices
+
+- Use structured key names: `user:42:profile`, `session:abc123`
+- Set TTLs on all cache keys to prevent memory leaks
+- Configure an eviction policy (`allkeys-lru` is a good default)
+- Use pipelining to batch multiple commands and reduce round trips
+- Monitor memory usage and key count with `INFO` command
+- Use Lua scripts for multi-step atomic operations

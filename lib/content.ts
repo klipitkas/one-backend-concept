@@ -34,20 +34,24 @@ export function getAllConcepts(): Concept[] {
 
   const files = fs.readdirSync(CONTENT_DIR).filter((file) => file.endsWith(".mdx"));
 
-  const concepts = files.map((file) => {
-    const filePath = path.join(CONTENT_DIR, file);
-    const fileContent = fs.readFileSync(filePath, "utf-8");
-    const { data, content } = matter(fileContent);
-    const slug = getSlugFromFilename(file);
+  const today = new Date().toISOString().split("T")[0];
 
-    return {
-      ...(data as ConceptFrontmatter),
-      slug, // Override slug from frontmatter with filename-based slug
-      content,
-      readingTime: readingTime(content).text,
-      filename: file,
-    };
-  });
+  const concepts = files
+    .map((file) => {
+      const filePath = path.join(CONTENT_DIR, file);
+      const fileContent = fs.readFileSync(filePath, "utf-8");
+      const { data, content } = matter(fileContent);
+      const slug = getSlugFromFilename(file);
+
+      return {
+        ...(data as ConceptFrontmatter),
+        slug, // Override slug from frontmatter with filename-based slug
+        content,
+        readingTime: readingTime(content).text,
+        filename: file,
+      };
+    })
+    .filter((concept) => concept.date <= today);
 
   return concepts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
